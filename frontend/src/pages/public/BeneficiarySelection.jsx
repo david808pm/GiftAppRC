@@ -70,8 +70,12 @@ export default function BeneficiarySelection() {
           }
 
           const emp = sessionData.employee;
-          if (emp.status === 'BLOCKED' || emp.status === 'CONFIRMED') {
+          if (emp.status === 'BLOCKED') {
             navigate(`/campaign/${slug}/login`);
+            return;
+          }
+          if (emp.status === 'CONFIRMED') {
+            navigate(`/campaign/${slug}/already-confirmed`);
             return;
           }
 
@@ -112,10 +116,7 @@ export default function BeneficiarySelection() {
           setLoading(false);
         } catch (err) {
           if (cancelled) return;
-          if (
-            err.message?.includes('Sesión') ||
-            err.message?.includes('401')
-          ) {
+          if (err.status === 401) {
             navigate(`/campaign/${slug}/login`);
           } else {
             setLoadError('No fue posible cargar las opciones de regalos.');
@@ -137,8 +138,12 @@ export default function BeneficiarySelection() {
           (e) => e.id === session.employeeId && e.campaignId === camp.id
         );
 
-        if (!emp || emp.status === 'BLOCKED' || emp.status === 'CONFIRMED') {
+        if (!emp || emp.status === 'BLOCKED') {
           navigate(`/campaign/${slug}/login`);
+          return;
+        }
+        if (emp.status === 'CONFIRMED') {
+          navigate(`/campaign/${slug}/already-confirmed`);
           return;
         }
 

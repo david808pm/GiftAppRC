@@ -115,7 +115,7 @@ export class DashboardService {
       this.prisma.supportRequest.count({ where: { ...supportFilter, status: 'OPEN' } }),
       this.prisma.supportRequest.count({ where: { ...supportFilter, status: 'IN_REVIEW' } }),
       this.prisma.supportRequest.count({ where: { ...supportFilter, status: 'RESOLVED' } }),
-      this.prisma.selection.count({ where: { ...selectionFilter, status: 'CONFIRMED' } }),
+      this.prisma.selectionItem.count({ where: { selection: { ...selectionFilter, status: 'CONFIRMED' } } }),
       this.prisma.selection.count({ where: { ...selectionFilter, status: 'CANCELLED' } }),
       this.prisma.company.count({ where: companyFilter }),
     ]);

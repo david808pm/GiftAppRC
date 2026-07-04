@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as ExcelJS from 'exceljs';
 
@@ -53,6 +53,10 @@ function normalizeGender(raw: string): string | null {
   if (v === 'male' || v === 'masculino' || v === 'm') return 'male';
   if (v === 'female' || v === 'femenino' || v === 'f') return 'female';
   return null;
+}
+
+function normalizeName(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 /**
@@ -314,45 +318,77 @@ export class ImportsService {
       }
     }
 
-    // ── 6. Process each employee group (atomic write phase) ─
-    // The whole write phase runs in a single transaction so a failure on any
-    // row rolls back every prior insert/update, avoiding partial imports and
-    // duplicate beneficiaries on retry.
-    const { employeesCreated, employeesUpdated, beneficiariesCreated, skippedRows, warnings } =
-      await this.prisma.$transaction(
-        async (tx) => {
-          let employeesCreated = 0;
-          let employeesUpdated = 0;
-          let beneficiariesCreated = 0;
-          let skippedRows = 0;
-          const warnings: ImportWarning[] = [];
+    // ── 6. Process employee groups in batches ───────────────
+    // Split groups into batches to avoid long-running transactions
+    // that exceed the Supabase pooler timeout.
+    const BATCH_SIZE = 10;
+    const BATCH_TIMEOUT = 120000;
+    const logger = new Logger('Import');
 
-          for (const [, group] of groups) {
-            // Find employee by campaignId + documentId
-            let employee = await tx.employee.findUnique({
-              where: {
-                campaignId_documentId: {
-                  campaignId: group.campaignId,
-                  documentId: group.documentId,
-                },
-              },
-            });
+    const groupArray = Array.from(groups.values());
+    const batches: typeof groupArray[] = [];
+    for (let i = 0; i < groupArray.length; i += BATCH_SIZE) {
+      batches.push(groupArray.slice(i, i + BATCH_SIZE));
+    }
+
+    let employeesCreated = 0;
+    let employeesUpdated = 0;
+    let beneficiariesCreated = 0;
+    let skippedRows = 0;
+    const warnings: ImportWarning[] = [];
+
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex];
+      logger.log(`batch ${batchIndex + 1}/${batches.length} started (${batch.length} groups)`);
+
+      const batchResult = await this.prisma.$transaction(
+        async (tx) => {
+          let ec = 0;
+          let eu = 0;
+          let bc = 0;
+          let sr = 0;
+          const w: ImportWarning[] = [];
+
+          // ── 6a. Bulk fetch existing employees for this batch ──
+          const campaignIds = [...new Set(batch.map((g) => g.campaignId))];
+          const documentIds = [...new Set(batch.map((g) => g.documentId))];
+          const existingEmployees = await tx.employee.findMany({
+            where: {
+              campaignId: { in: campaignIds },
+              documentId: { in: documentIds },
+            },
+          });
+          const empMap = new Map<string, typeof existingEmployees[number]>();
+          for (const emp of existingEmployees) {
+            empMap.set(`${emp.campaignId}::${emp.documentId}`, emp);
+          }
+
+          // ── 6b. Classify groups and prepare create payload ──
+          type GroupInfo = { group: typeof batch[0]; isConfirmed: boolean };
+          const groupInfos: GroupInfo[] = [];
+          const createPayload: Array<{
+            campaignId: number;
+            documentId: string;
+            fullName: string;
+            email: string | null;
+            phone: string | null;
+            shippingAddress: string | null;
+            shippingCity: string | null;
+            status: 'PENDING';
+            createdById: number;
+          }> = [];
+          const updateActions: Array<{ id: number; data: Record<string, unknown> }> = [];
+
+          for (const group of batch) {
+            const key = `${group.campaignId}::${group.documentId}`;
+            const employee = empMap.get(key);
 
             if (employee) {
               if (employee.status === 'CONFIRMED') {
-                // Skip all rows for this confirmed employee
-                for (const r of group.rows) {
-                  warnings.push({
-                    row: r.excelRow,
-                    message:
-                      'El empleado ya estaba confirmado y no fue actualizado.',
-                  });
-                  skippedRows++;
-                }
+                groupInfos.push({ group, isConfirmed: true });
                 continue;
               }
 
-              // Update safe fields (only if different)
               const updateData: Record<string, unknown> = {};
               if (employee.fullName !== group.employeeFullName) {
                 updateData.fullName = group.employeeFullName;
@@ -383,81 +419,167 @@ export class ImportsService {
               }
 
               if (Object.keys(updateData).length > 0) {
-                await tx.employee.update({
-                  where: { id: employee.id },
-                  data: {
-                    ...updateData,
-                    updatedById: adminUserId,
-                  },
-                });
-                employeesUpdated++;
+                updateActions.push({ id: employee.id, data: updateData });
               }
+              groupInfos.push({ group, isConfirmed: false });
             } else {
-              // Create new employee
-              employee = await tx.employee.create({
-                data: {
-                  campaignId: group.campaignId,
-                  documentId: group.documentId,
-                  fullName: group.employeeFullName,
-                  email: group.employeeEmail || null,
-                  phone: group.employeePhone || null,
-                  shippingAddress: group.shippingAddress || null,
-                  shippingCity: group.shippingCity || null,
-                  status: 'PENDING',
-                  createdById: adminUserId,
-                },
+              createPayload.push({
+                campaignId: group.campaignId,
+                documentId: group.documentId,
+                fullName: group.employeeFullName,
+                email: group.employeeEmail || null,
+                phone: group.employeePhone || null,
+                shippingAddress: group.shippingAddress || null,
+                shippingCity: group.shippingCity || null,
+                status: 'PENDING' as const,
+                createdById: adminUserId,
               });
-              employeesCreated++;
-            }
-
-            // ── Process beneficiaries for this employee ──────────
-            // Fetch existing beneficiaries for duplicate check
-            const existingBeneficiaries = await tx.beneficiary.findMany({
-              where: { employeeId: employee.id, deletedAt: null },
-              select: { fullName: true, age: true, gender: true },
-            });
-
-            const existingSet = new Set(
-              existingBeneficiaries.map(
-                (b) => `${b.fullName}::${b.age}::${b.gender}`,
-              ),
-            );
-
-            for (const row of group.rows) {
-              const dupKey = `${row.beneficiaryFullName}::${row.beneficiaryAge}::${row.beneficiaryGender}`;
-              if (existingSet.has(dupKey)) {
-                warnings.push({
-                  row: row.excelRow,
-                  message: `El beneficiario "${row.beneficiaryFullName}" (${row.beneficiaryAge}, ${row.beneficiaryGender}) ya existe para este empleado.`,
-                });
-                skippedRows++;
-                continue;
-              }
-
-              await tx.beneficiary.create({
-                data: {
-                  employeeId: employee.id,
-                  fullName: row.beneficiaryFullName,
-                  age: row.beneficiaryAge,
-                  gender: row.beneficiaryGender as 'male' | 'female',
-                  createdById: adminUserId,
-                },
-              });
-              beneficiariesCreated++;
-              existingSet.add(dupKey);
+              groupInfos.push({ group, isConfirmed: false });
             }
           }
 
-          return {
-            employeesCreated,
-            employeesUpdated,
-            beneficiariesCreated,
-            skippedRows,
-            warnings,
-          };
+          // ── 6c. Batch create new employees ──
+          if (createPayload.length > 0) {
+            const createResult = await tx.employee.createMany({
+              data: createPayload,
+              skipDuplicates: true,
+            });
+            ec = createResult.count;
+          }
+
+          // ── 6d. Re-fetch batch employees to get IDs ──
+          const freshEmployees = await tx.employee.findMany({
+            where: {
+              campaignId: { in: campaignIds },
+              documentId: { in: documentIds },
+            },
+          });
+          const freshEmpMap = new Map<string, typeof freshEmployees[number]>();
+          for (const emp of freshEmployees) {
+            freshEmpMap.set(`${emp.campaignId}::${emp.documentId}`, emp);
+          }
+
+          // ── 6e. Apply individual employee updates ──
+          for (const action of updateActions) {
+            await tx.employee.update({
+              where: { id: action.id },
+              data: { ...action.data, updatedById: adminUserId },
+            });
+            eu++;
+          }
+
+          // ── 6f. Bulk beneficiary processing ──
+          // Collect employee IDs for non-CONFIRMED groups
+          const nonConfirmedEmployeeIds: number[] = [];
+          for (const { group, isConfirmed } of groupInfos) {
+            if (isConfirmed) continue;
+            const key = `${group.campaignId}::${group.documentId}`;
+            const emp = freshEmpMap.get(key);
+            if (emp) {
+              nonConfirmedEmployeeIds.push(emp.id);
+            }
+          }
+
+          // One query: fetch all existing beneficiaries for this batch
+          const existingBeneficiaries = nonConfirmedEmployeeIds.length > 0
+            ? await tx.beneficiary.findMany({
+                where: {
+                  employeeId: { in: nonConfirmedEmployeeIds },
+                  deletedAt: null,
+                },
+                select: { employeeId: true, fullName: true, age: true, gender: true },
+              })
+            : [];
+
+          const existingBenSet = new Set<string>();
+          for (const b of existingBeneficiaries) {
+            existingBenSet.add(
+              `${b.employeeId}::${normalizeName(b.fullName)}::${b.age}::${b.gender}`,
+            );
+          }
+
+          // In-memory pass: classify rows, build createMany payload
+          const beneficiaryCreatePayload: Array<{
+            employeeId: number;
+            fullName: string;
+            age: number;
+            gender: 'male' | 'female';
+            createdById: number;
+          }> = [];
+          const currentBatchDupSet = new Set<string>();
+
+          for (const { group, isConfirmed } of groupInfos) {
+            if (isConfirmed) {
+              for (const r of group.rows) {
+                w.push({
+                  row: r.excelRow,
+                  message:
+                    'El empleado ya estaba confirmado y no fue actualizado.',
+                });
+                sr++;
+              }
+              continue;
+            }
+
+            const key = `${group.campaignId}::${group.documentId}`;
+            const employee = freshEmpMap.get(key);
+            if (!employee) continue;
+
+            for (const row of group.rows) {
+              const normName = normalizeName(row.beneficiaryFullName);
+              const dupKey = `${employee.id}::${normName}::${row.beneficiaryAge}::${row.beneficiaryGender}`;
+
+              if (existingBenSet.has(dupKey)) {
+                w.push({
+                  row: row.excelRow,
+                  message: `El beneficiario "${row.beneficiaryFullName}" (${row.beneficiaryAge}, ${row.beneficiaryGender}) ya existe para este empleado.`,
+                });
+                sr++;
+                continue;
+              }
+
+              if (currentBatchDupSet.has(dupKey)) {
+                w.push({
+                  row: row.excelRow,
+                  message: `El beneficiario "${row.beneficiaryFullName}" (${row.beneficiaryAge}, ${row.beneficiaryGender}) ya está duplicado en este archivo.`,
+                });
+                sr++;
+                continue;
+              }
+
+              beneficiaryCreatePayload.push({
+                employeeId: employee.id,
+                fullName: row.beneficiaryFullName,
+                age: row.beneficiaryAge,
+                gender: row.beneficiaryGender as 'male' | 'female',
+                createdById: adminUserId,
+              });
+              currentBatchDupSet.add(dupKey);
+            }
+          }
+
+          // One query: create all new beneficiaries
+          if (beneficiaryCreatePayload.length > 0) {
+            const benResult = await tx.beneficiary.createMany({
+              data: beneficiaryCreatePayload,
+              skipDuplicates: true,
+            });
+            bc = benResult.count;
+          }
+
+          return { ec, eu, bc, sr, w };
         },
-        { timeout: 120000, maxWait: 20000 },
+        { timeout: BATCH_TIMEOUT, maxWait: 20000 },
       );
+
+      employeesCreated += batchResult.ec;
+      employeesUpdated += batchResult.eu;
+      beneficiariesCreated += batchResult.bc;
+      skippedRows += batchResult.sr;
+      warnings.push(...batchResult.w);
+
+      logger.log(`batch ${batchIndex + 1}/${batches.length} completed`);
+    }
 
     return {
       totalRows: rawRows.length,

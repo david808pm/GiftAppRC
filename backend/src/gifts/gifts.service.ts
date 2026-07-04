@@ -9,11 +9,15 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateGiftDto } from './dto/create-gift.dto';
 import { UpdateGiftDto } from './dto/update-gift.dto';
 import { GiftQueryDto } from './dto/gift-query.dto';
+import { SupabaseStorageService } from '../common/services/supabase-storage.service';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class GiftsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: SupabaseStorageService,
+  ) {}
 
   // ── Helpers ──────────────────────────────────────────────
 
@@ -88,10 +92,10 @@ export class GiftsService {
     if (minAge !== undefined || maxAge !== undefined) {
       where.AND = [];
       if (minAge !== undefined) {
-        (where.AND as Prisma.GiftWhereInput[]).push({ minAge: { lte: maxAge } });
+        (where.AND as Prisma.GiftWhereInput[]).push({ maxAge: { gte: minAge } });
       }
       if (maxAge !== undefined) {
-        (where.AND as Prisma.GiftWhereInput[]).push({ maxAge: { gte: minAge } });
+        (where.AND as Prisma.GiftWhereInput[]).push({ minAge: { lte: maxAge } });
       }
     }
 
@@ -187,22 +191,43 @@ export class GiftsService {
     // If soft-deleted, restore
     if (existing && existing.deletedAt) {
       await this.prisma.$transaction(async (tx) => {
+        const restoreData: Prisma.GiftUpdateInput = {
+          name: dto.name.trim(),
+          shortDescription: dto.shortDescription?.trim(),
+          technicalDescription: dto.technicalDescription?.trim(),
+          dimensions: dto.dimensions?.trim(),
+          minAge,
+          maxAge,
+          allowedGender: dto.allowedGender ?? 'all',
+          status: dto.status ?? 'ACTIVE',
+          deletedAt: null,
+          updatedBy: { connect: { id: adminUserId } },
+        };
+
+        if (dto.stock !== undefined) {
+          restoreData.stock = dto.stock;
+        }
+
         await tx.gift.update({
           where: { id: existing.id },
-          data: {
-            name: dto.name.trim(),
-            shortDescription: dto.shortDescription?.trim(),
-            technicalDescription: dto.technicalDescription?.trim(),
-            dimensions: dto.dimensions?.trim(),
-            stock: dto.stock ?? 0,
-            minAge,
-            maxAge,
-            allowedGender: dto.allowedGender ?? 'all',
-            status: dto.status ?? 'ACTIVE',
-            deletedAt: null,
-            updatedBy: { connect: { id: adminUserId } },
-          },
+          data: restoreData,
         });
+
+        if (dto.stock !== undefined && dto.stock !== existing.stock) {
+          await tx.stockMovement.create({
+            data: {
+              giftId: existing.id,
+              campaignId: dto.campaignId,
+              movementType: 'CORRECTION',
+              quantityChange: dto.stock - existing.stock,
+              previousStock: existing.stock,
+              newStock: dto.stock,
+              reason: 'Restauración de regalo eliminado',
+              createdById: adminUserId,
+            },
+          });
+        }
+
         await this.syncImages(tx, existing.id, dto.imageUrls);
       });
       // TODO: AuditLog — log gift restore when AuditLog module is implemented.
@@ -331,5 +356,56 @@ export class GiftsService {
       data: { deletedAt: new Date(), status: 'INACTIVE' },
       include: this.giftInclude,
     });
+  }
+
+  // ── Admin: upload image ─────────────────────────────────
+
+  async uploadImage(
+    giftId: number,
+    buffer: Buffer,
+    mimetype: string,
+    originalname: string,
+    adminUserId: number,
+  ) {
+    const gift = await this.findOne(giftId);
+    const campaignId = gift.campaignId;
+
+    SupabaseStorageService.validateMimeType(mimetype);
+    SupabaseStorageService.validateFileSize(buffer.length);
+
+    const ext = SupabaseStorageService.sanitizeExtension(mimetype);
+    const storagePath = this.storage.buildStoragePath(campaignId, giftId, ext);
+
+    const publicUrl = await this.storage.uploadFile(buffer, storagePath, mimetype);
+
+    await this.prisma.$transaction(async (tx) => {
+      // Shift existing images to make room for the new primary
+      const existing = await tx.giftImage.findMany({
+        where: { giftId },
+        orderBy: { sortOrder: 'asc' },
+      });
+
+      for (let i = 0; i < existing.length; i++) {
+        await tx.giftImage.update({
+          where: { id: existing[i].id },
+          data: {
+            sortOrder: i + 1,
+            isPrimary: false,
+          },
+        });
+      }
+
+      await tx.giftImage.create({
+        data: {
+          giftId,
+          imageUrl: publicUrl,
+          altText: originalname,
+          sortOrder: 0,
+          isPrimary: true,
+        },
+      });
+    });
+
+    return this.findOne(giftId);
   }
 }

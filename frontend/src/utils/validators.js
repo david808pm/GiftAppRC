@@ -30,6 +30,8 @@ function validateNumeric(value, fieldName) {
 }
 
 function validateAge(age) {
+  const text = String(age ?? '').trim();
+  if (text === '') return 'La edad es obligatoria.';
   const num = Number(age);
   if (!Number.isInteger(num)) return 'La edad debe ser un número entero.';
   if (num < 0 || num > 13) return 'La edad debe estar entre 0 y 13.';

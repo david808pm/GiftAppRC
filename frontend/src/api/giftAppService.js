@@ -65,7 +65,7 @@ export async function giftAppGetAdminSession() {
     const { getAdminMe } = await getBackendAuth();
     const user = await getAdminMe();
     return user
-      ? { name: user.email, role: user.role, id: user.id, email: user.email }
+      ? { name: user.name || user.email, role: user.role, id: user.id, email: user.email }
       : null;
   }
 
@@ -164,7 +164,11 @@ export async function giftAppUpdateCampaign(id, data) {
       logoText: data.logoText,
       primaryColor: data.primaryColor,
     };
-    return await updateCampaign(id, payload);
+    const result = await updateCampaign(id, payload);
+    if (result?.slug) {
+      clearCache(`campaign_${result.slug}`);
+    }
+    return result;
   }
 
   const { getData, KEYS, setData } = await getLocalAuth();
@@ -177,7 +181,11 @@ export async function giftAppUpdateCampaign(id, data) {
 export async function giftAppDeleteCampaign(id) {
   if (USE_BACKEND) {
     const { deleteCampaign } = await getBackendAuth();
-    return await deleteCampaign(id);
+    const result = await deleteCampaign(id);
+    if (result?.slug) {
+      clearCache(`campaign_${result.slug}`);
+    }
+    return result;
   }
 
   const { getData, KEYS, setData } = await getLocalAuth();
@@ -210,10 +218,10 @@ export async function giftAppUploadCampaignLogo(campaignId, file) {
 // Employees
 // ═══════════════════════════════════════════════════════════
 
-export async function giftAppGetEmployees() {
+export async function giftAppGetEmployees(params = {}) {
   if (USE_BACKEND) {
     const { fetchEmployees } = await getBackendAuth();
-    return await fetchEmployees();
+    return await fetchEmployees(params);
   }
 
   const { getData, KEYS } = await getLocalAuth();
@@ -320,10 +328,10 @@ export async function giftAppImportEmployeesBeneficiaries(file) {
 // Beneficiaries
 // ═══════════════════════════════════════════════════════════
 
-export async function giftAppGetBeneficiaries() {
+export async function giftAppGetBeneficiaries(params = {}) {
   if (USE_BACKEND) {
     const { fetchBeneficiaries } = await getBackendAuth();
-    return await fetchBeneficiaries();
+    return await fetchBeneficiaries(params);
   }
 
   const { getData, KEYS } = await getLocalAuth();
@@ -450,10 +458,20 @@ export async function giftAppUpdateGift(id, data) {
   return updated.find((g) => g.id === id);
 }
 
+export async function giftAppUploadGiftImage(giftId, file) {
+  if (USE_BACKEND) {
+    const { uploadGiftImage } = await getBackendAuth();
+    return await uploadGiftImage(giftId, file);
+  }
+  throw new Error('La carga de imágenes solo está disponible en modo backend.');
+}
+
 export async function giftAppDeleteGift(id) {
   if (USE_BACKEND) {
     const { deleteGift } = await getBackendAuth();
-    return await deleteGift(id);
+    const result = await deleteGift(id);
+    clearCache('gifts_all');
+    return result;
   }
 
   const { getData, KEYS, setData } = await getLocalAuth();
@@ -768,7 +786,9 @@ export async function giftAppGetCompanies() {
 export async function giftAppCreateCompany(data) {
   if (USE_BACKEND) {
     const { createCompany } = await getBackendAuth();
-    return await createCompany(data);
+    const result = await createCompany(data);
+    clearCache('companies');
+    return result;
   }
   throw new Error('La gestión de empresas solo está disponible en modo backend.');
 }

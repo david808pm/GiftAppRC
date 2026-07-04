@@ -45,7 +45,9 @@ async function request(method, path, body = null) {
 
   if (response.status === 401) {
     clearToken();
-    throw new Error('Sesión expirada. Inicia sesión nuevamente.');
+    const err = new Error('Sesión expirada. Inicia sesión nuevamente.');
+    err.status = 401;
+    throw err;
   }
 
   // No content (e.g. 204 from some DELETE endpoints): nothing to parse.
@@ -90,7 +92,9 @@ async function uploadRequest(method, path, formData) {
 
   if (response.status === 401) {
     clearToken();
-    throw new Error('Sesión expirada. Inicia sesión nuevamente.');
+    const err = new Error('Sesión expirada. Inicia sesión nuevamente.');
+    err.status = 401;
+    throw err;
   }
 
   let data;
@@ -128,7 +132,9 @@ async function downloadBlobRequest(method, path, queryParams = {}) {
 
   if (response.status === 401) {
     clearToken();
-    throw new Error('Sesión expirada. Inicia sesión nuevamente.');
+    const err = new Error('Sesión expirada. Inicia sesión nuevamente.');
+    err.status = 401;
+    throw err;
   }
 
   if (!response.ok) {

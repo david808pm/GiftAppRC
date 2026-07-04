@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { validateRequired, validateAge, validateGender } from '../../utils/validators';
 import { formatDate } from '../../utils/dates';
@@ -23,13 +23,21 @@ const EMPTY_BENEFICIARY = {
   gender: 'male',
 };
 
+const PAGE_SIZES = [25, 50, 100];
+
 export default function BeneficiariesAdmin() {
   const { isReadOnly } = useOutletContext() || {};
   const [beneficiaries, setBeneficiaries] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const [loadRevision, setLoadRevision] = useState(0);
   const [filterEmployee, setFilterEmployee] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY_BENEFICIARY);
@@ -41,18 +49,32 @@ export default function BeneficiariesAdmin() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const loadData = async () => {
+  const loadData = useCallback(async (opts = {}) => {
     if (USE_BACKEND) {
       setLoading(true);
       setError(null);
     }
     try {
-      const [beneficiariesData, employeesData, campaignsData] = await Promise.all([
-        giftAppGetBeneficiaries(),
+      const p = opts.page ?? page;
+      const ps = opts.pageSize ?? pageSize;
+      const s = opts.search !== undefined ? opts.search : search;
+      const fe = opts.employeeId !== undefined ? opts.employeeId : filterEmployee;
+
+      const query = { page: p, pageSize: ps };
+      if (s) query.search = s;
+      if (fe) query.employeeId = fe;
+
+      const [response, employeesData, campaignsData] = await Promise.all([
+        giftAppGetBeneficiaries(query),
         giftAppGetEmployees(),
         giftAppGetCampaigns(),
       ]);
-      setBeneficiaries(beneficiariesData);
+
+      setBeneficiaries(response.data);
+      setPage(response.meta.page);
+      setPageSize(response.meta.pageSize);
+      setTotal(response.meta.total);
+      setTotalPages(response.meta.totalPages);
       setEmployees(employeesData);
       setCampaigns(campaignsData);
     } catch {
@@ -64,17 +86,35 @@ export default function BeneficiariesAdmin() {
         setLoading(false);
       }
     }
+  }, [page, pageSize, search, filterEmployee, addToast]);
+
+  const handleSearchChange = (value) => {
+    setSearchInput(value);
+    setPage(1);
+  };
+
+  const handleFilterEmployeeChange = (value) => {
+    setFilterEmployee(value);
+    setPage(1);
+  };
+
+  const handlePageSizeChange = (newSize) => {
+    setPageSize(newSize);
+    setPage(1);
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    const timer = setTimeout(() => {
+      setSearch(searchInput);
+      setLoadRevision(v => v + 1);
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
-  const filtered = beneficiaries.filter((b) => {
-    const matchesSearch = b.fullName.toLowerCase().includes(search.toLowerCase());
-    const matchesEmployee = !filterEmployee || String(b.employeeId) === filterEmployee;
-    return matchesSearch && matchesEmployee;
-  });
+  useEffect(() => {
+    if (!USE_BACKEND) return;
+    loadData({ page, pageSize, search, employeeId: filterEmployee });
+  }, [page, pageSize, search, filterEmployee, loadRevision]);
 
   const getEmployeeName = (id) => {
     return employees.find((e) => String(e.id) === String(id))?.fullName || id;
@@ -124,7 +164,7 @@ export default function BeneficiariesAdmin() {
       } else {
         await giftAppCreateBeneficiary(form);
       }
-      await loadData();
+      await loadData({ page: editing ? page : 1, pageSize });
       setShowModal(false);
       addToast(editing ? 'Beneficiario actualizado.' : 'Beneficiario creado.');
     } catch (err) {
@@ -140,7 +180,7 @@ export default function BeneficiariesAdmin() {
     setDeleting(true);
     try {
       await giftAppDeleteBeneficiary(deleteTarget.id);
-      await loadData();
+      await loadData({ page, pageSize });
       setDeleteTarget(null);
       addToast('Beneficiario eliminado.');
     } catch (err) {
@@ -196,12 +236,12 @@ export default function BeneficiariesAdmin() {
           <input
             type="text"
             placeholder="Buscar por nombre..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => handleSearchChange(e.target.value)}
           />
           <select
             value={filterEmployee}
-            onChange={(e) => setFilterEmployee(e.target.value)}
+            onChange={(e) => handleFilterEmployeeChange(e.target.value)}
           >
             <option value="">Todos los Empleados</option>
             {employees.map((e) => (
@@ -212,54 +252,91 @@ export default function BeneficiariesAdmin() {
           </select>
         </div>
 
-        {filtered.length === 0 ? (
+        {beneficiaries.length === 0 && !loading ? (
           <EmptyState title="Sin beneficiarios" message="Agrega tu primer beneficiario." />
         ) : (
-          <div className="table-container">
-            <table>
-              <thead>
-                <tr>
-                  <th>Nombre</th>
-                  <th>Edad</th>
-                  <th>Género</th>
-                  <th>Empleado</th>
-                  <th>Campaña</th>
-                  <th>Creado</th>
-                  <th>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((b) => (
-                  <tr key={b.id}>
-                    <td style={{ fontWeight: 500 }}>{b.fullName}</td>
-                    <td>{b.age}</td>
-                    <td style={{ textTransform: 'capitalize' }}>{b.gender === 'male' ? 'Masculino' : 'Femenino'}</td>
-                    <td>{getEmployeeName(b.employeeId)}</td>
-                    <td>{getCampaignForEmployee(b.employeeId)}</td>
-                    <td>{formatDate(b.createdAt)}</td>
-                    <td>
-                      {!isReadOnly && (
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <button
-                            className="btn btn-outline btn-sm"
-                            onClick={() => openEdit(b)}
-                          >
-                            Editar
-                          </button>
-                          <button
-                            className="btn btn-danger btn-sm"
-                            onClick={() => setDeleteTarget(b)}
-                          >
-                            Eliminar
-                          </button>
-                        </div>
-                      )}
-                    </td>
+          <>
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Nombre</th>
+                    <th>Edad</th>
+                    <th>Género</th>
+                    <th>Empleado</th>
+                    <th>Campaña</th>
+                    <th>Creado</th>
+                    <th>Acciones</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {beneficiaries.map((b) => (
+                    <tr key={b.id}>
+                      <td style={{ fontWeight: 500 }}>{b.fullName}</td>
+                      <td>{b.age}</td>
+                      <td style={{ textTransform: 'capitalize' }}>{b.gender === 'male' ? 'Masculino' : 'Femenino'}</td>
+                      <td>{getEmployeeName(b.employeeId)}</td>
+                      <td>{getCampaignForEmployee(b.employeeId)}</td>
+                      <td>{formatDate(b.createdAt)}</td>
+                      <td>
+                        {!isReadOnly && (
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button
+                              className="btn btn-outline btn-sm"
+                              onClick={() => openEdit(b)}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              className="btn btn-danger btn-sm"
+                              onClick={() => setDeleteTarget(b)}
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="pagination-bar">
+              <div className="pagination-info">
+                {total > 0 && (
+                  <span>{(page - 1) * pageSize + 1}&ndash;{Math.min(page * pageSize, total)} de {total}</span>
+                )}
+              </div>
+              <div className="pagination-controls">
+                <select
+                  value={pageSize}
+                  onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+                  className="pagination-page-size"
+                >
+                  {PAGE_SIZES.map((s) => (
+                    <option key={s} value={s}>{s} por página</option>
+                  ))}
+                </select>
+                <button
+                  className="btn btn-outline btn-sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => p - 1)}
+                >
+                  Anterior
+                </button>
+                <span className="pagination-current">
+                  Página {page} de {totalPages}
+                </span>
+                <button
+                  className="btn btn-outline btn-sm"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Siguiente
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
 

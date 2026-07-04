@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { validateRequired, validateNumeric } from '../../utils/validators';
 import { formatDate } from '../../utils/dates';
@@ -27,12 +27,21 @@ const EMPTY_EMPLOYEE = {
   status: 'PENDING',
 };
 
+const PAGE_SIZES = [25, 50, 100];
+
 export default function Employees() {
   const { isReadOnly } = useOutletContext() || {};
   const [employees, setEmployees] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const [loadRevision, setLoadRevision] = useState(0);
   const [filterCampaign, setFilterCampaign] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY_EMPLOYEE);
@@ -46,38 +55,72 @@ export default function Employees() {
   const [importFile, setImportFile] = useState(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [importError, setImportError] = useState(null);
 
-  const loadData = async () => {
+  const loadData = useCallback(async (opts = {}) => {
     if (USE_BACKEND) setLoading(true);
     try {
-      const [employeesData, campaignsData] = await Promise.all([
-        giftAppGetEmployees(),
+      const p = opts.page ?? page;
+      const ps = opts.pageSize ?? pageSize;
+      const s = opts.search !== undefined ? opts.search : search;
+      const fc = opts.campaignId !== undefined ? opts.campaignId : filterCampaign;
+      const fs = opts.status !== undefined ? opts.status : filterStatus;
+
+      const query = { page: p, pageSize: ps };
+      if (s) query.search = s;
+      if (fc) query.campaignId = fc;
+      if (fs) query.status = fs;
+
+      const [response, campaignsData] = await Promise.all([
+        giftAppGetEmployees(query),
         giftAppGetCampaigns(),
       ]);
-      setEmployees(employeesData);
+
+      setEmployees(response.data);
+      setPage(response.meta.page);
+      setPageSize(response.meta.pageSize);
+      setTotal(response.meta.total);
+      setTotalPages(response.meta.totalPages);
       setCampaigns(campaignsData);
     } catch (err) {
       if (USE_BACKEND) addToast(err.message || 'Error al cargar datos.', 'error');
     } finally {
       if (USE_BACKEND) setLoading(false);
     }
+  }, [page, pageSize, search, filterCampaign, filterStatus, addToast]);
+
+  const handleSearchChange = (value) => {
+    setSearchInput(value);
+    setPage(1);
+  };
+
+  const handleFilterCampaignChange = (value) => {
+    setFilterCampaign(value);
+    setPage(1);
+  };
+
+  const handleFilterStatusChange = (value) => {
+    setFilterStatus(value);
+    setPage(1);
+  };
+
+  const handlePageSizeChange = (newSize) => {
+    setPageSize(newSize);
+    setPage(1);
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    const timer = setTimeout(() => {
+      setSearch(searchInput);
+      setLoadRevision(v => v + 1);
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
-  const filtered = employees.filter((e) => {
-    const matchesSearch =
-      e.fullName.toLowerCase().includes(search.toLowerCase()) ||
-      e.documentId.includes(search) ||
-      (e.email || '').toLowerCase().includes(search.toLowerCase()) ||
-      (e.phone || '').includes(search) ||
-      (e.shippingCity || '').toLowerCase().includes(search.toLowerCase()) ||
-      (e.shippingAddress || '').toLowerCase().includes(search.toLowerCase());
-    const matchesCampaign = !filterCampaign || String(e.campaignId) === filterCampaign;
-    return matchesSearch && matchesCampaign;
-  });
+  useEffect(() => {
+    if (!USE_BACKEND) return;
+    loadData({ page, pageSize, search, campaignId: filterCampaign, status: filterStatus });
+  }, [page, pageSize, search, filterCampaign, filterStatus, loadRevision]);
 
   const openCreate = () => {
     setEditing(null);
@@ -134,7 +177,7 @@ export default function Employees() {
       } else {
         await giftAppCreateEmployee(form);
       }
-      await loadData();
+      await loadData({ page: editing ? page : 1, pageSize });
       setShowModal(false);
       addToast(editing ? 'Empleado actualizado.' : 'Empleado creado.');
     } catch (err) {
@@ -150,7 +193,7 @@ export default function Employees() {
     setDeleting(true);
     try {
       await giftAppDeleteEmployee(deleteTarget.id);
-      await loadData();
+      await loadData({ page, pageSize });
       setDeleteTarget(null);
       addToast('Empleado eliminado.');
     } catch (err) {
@@ -167,6 +210,7 @@ export default function Employees() {
   const openImportModal = () => {
     setImportFile(null);
     setImportResult(null);
+    setImportError(null);
     setShowImportModal(true);
   };
 
@@ -174,6 +218,7 @@ export default function Employees() {
     setShowImportModal(false);
     setImportFile(null);
     setImportResult(null);
+    setImportError(null);
   };
 
   const handleImportFileChange = (e) => {
@@ -185,20 +230,25 @@ export default function Employees() {
     }
     setImportFile(file || null);
     setImportResult(null);
+    setImportError(null);
   };
 
   const handleImport = async () => {
-    if (!importFile) return;
+    if (!importFile || importing) return;
 
     setImporting(true);
+    setImportResult(null);
+    setImportError(null);
     try {
       const result = await giftAppImportEmployeesBeneficiaries(importFile);
       setImportResult(result);
-      await loadData();
-      addToast('Importación completada con éxito.');
+      try {
+        await loadData({ page: 1, pageSize });
+      } catch {
+        setImportError('La importación finalizó, pero no se pudo actualizar la lista de empleados. Recarga la página.');
+      }
     } catch (err) {
-      addToast(err.message || 'Error en la importación.', 'error');
-      setImportResult(null);
+      setImportError(err.message || 'Error en la importación.');
     } finally {
       setImporting(false);
     }
@@ -252,13 +302,13 @@ export default function Employees() {
         <div className="search-bar">
           <input
             type="text"
-            placeholder="Buscar por nombre, ID o correo..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por nombre, ID, correo, teléfono, ciudad o dirección..."
+            value={searchInput}
+            onChange={(e) => handleSearchChange(e.target.value)}
           />
           <select
             value={filterCampaign}
-            onChange={(e) => setFilterCampaign(e.target.value)}
+            onChange={(e) => handleFilterCampaignChange(e.target.value)}
           >
             <option value="">Todas las Campañas</option>
             {campaigns.map((c) => (
@@ -267,64 +317,111 @@ export default function Employees() {
               </option>
             ))}
           </select>
+          <select
+            value={filterStatus}
+            onChange={(e) => handleFilterStatusChange(e.target.value)}
+          >
+            <option value="">Todos los Estados</option>
+            <option value="PENDING">Pendiente</option>
+            <option value="IN_PROGRESS">En Progreso</option>
+            <option value="CONFIRMED">Confirmado</option>
+            <option value="BLOCKED">Bloqueado</option>
+          </select>
         </div>
 
-        {filtered.length === 0 ? (
+        {employees.length === 0 && !loading ? (
           <EmptyState title="Sin empleados" message="Agrega tu primer empleado." />
         ) : (
-          <div className="table-container">
-            <table>
-              <thead>
-                <tr>
-                  <th>Nombre</th>
-                  <th>ID</th>
-                  <th>Correo</th>
-                  <th>Teléfono</th>
-                  <th>Ciudad</th>
-                  <th>Campaña</th>
-                  <th>Estado</th>
-                  <th>Creado</th>
-                  <th>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((e) => (
-                  <tr key={e.id}>
-                    <td style={{ fontWeight: 500 }}>{e.fullName}</td>
-                    <td>{e.documentId}</td>
-                    <td>{e.email}</td>
-                    <td>{e.phone || ''}</td>
-                    <td>{e.shippingCity || ''}</td>
-                    <td>{getCampaignName(e.campaignId)}</td>
-                    <td>
-                      <span className={`badge badge-${e.status.toLowerCase().replace('_', '-')}`}>
-                        {e.status === 'PENDING' ? 'Pendiente' : e.status === 'IN_PROGRESS' ? 'En Progreso' : e.status === 'CONFIRMED' ? 'Confirmado' : 'Bloqueado'}
-                      </span>
-                    </td>
-                    <td>{formatDate(e.createdAt)}</td>
-                    <td>
-                      {!isReadOnly && (
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <button
-                            className="btn btn-outline btn-sm"
-                            onClick={() => openEdit(e)}
-                          >
-                            Editar
-                          </button>
-                          <button
-                            className="btn btn-danger btn-sm"
-                            onClick={() => setDeleteTarget(e)}
-                          >
-                            Eliminar
-                          </button>
-                        </div>
-                      )}
-                    </td>
+          <>
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Nombre</th>
+                    <th>ID</th>
+                    <th>Correo</th>
+                    <th>Teléfono</th>
+                    <th>Ciudad</th>
+                    <th>Campaña</th>
+                    <th>Estado</th>
+                    <th>Creado</th>
+                    <th>Acciones</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {employees.map((e) => (
+                    <tr key={e.id}>
+                      <td style={{ fontWeight: 500 }}>{e.fullName}</td>
+                      <td>{e.documentId}</td>
+                      <td>{e.email}</td>
+                      <td>{e.phone || ''}</td>
+                      <td>{e.shippingCity || ''}</td>
+                      <td>{getCampaignName(e.campaignId)}</td>
+                      <td>
+                        <span className={`badge badge-${e.status.toLowerCase().replace('_', '-')}`}>
+                          {e.status === 'PENDING' ? 'Pendiente' : e.status === 'IN_PROGRESS' ? 'En Progreso' : e.status === 'CONFIRMED' ? 'Confirmado' : 'Bloqueado'}
+                        </span>
+                      </td>
+                      <td>{formatDate(e.createdAt)}</td>
+                      <td>
+                        {!isReadOnly && (
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button
+                              className="btn btn-outline btn-sm"
+                              onClick={() => openEdit(e)}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              className="btn btn-danger btn-sm"
+                              onClick={() => setDeleteTarget(e)}
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="pagination-bar">
+              <div className="pagination-info">
+                {total > 0 && (
+                  <span>{(page - 1) * pageSize + 1}&ndash;{Math.min(page * pageSize, total)} de {total}</span>
+                )}
+              </div>
+              <div className="pagination-controls">
+                <select
+                  value={pageSize}
+                  onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+                  className="pagination-page-size"
+                >
+                  {PAGE_SIZES.map((s) => (
+                    <option key={s} value={s}>{s} por página</option>
+                  ))}
+                </select>
+                <button
+                  className="btn btn-outline btn-sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => p - 1)}
+                >
+                  Anterior
+                </button>
+                <span className="pagination-current">
+                  Página {page} de {totalPages}
+                </span>
+                <button
+                  className="btn btn-outline btn-sm"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Siguiente
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
 
@@ -418,8 +515,6 @@ export default function Employees() {
           >
             <option value="PENDING">Pendiente</option>
             <option value="IN_PROGRESS">En Progreso</option>
-            {/* CONFIRMED is set automatically by the selection flow; only shown
-                (and kept) when the employee is already confirmed. */}
             <option value="CONFIRMED" disabled={form.status !== 'CONFIRMED'}>
               Confirmado
             </option>
@@ -433,7 +528,11 @@ export default function Employees() {
         onClose={closeImportModal}
         title="Importar Empleados y Beneficiarios"
         footer={
-          !importResult ? (
+          importResult || importError ? (
+            <button className="btn btn-primary" onClick={closeImportModal}>
+              Cerrar
+            </button>
+          ) : (
             <>
               <button className="btn btn-outline" onClick={closeImportModal} disabled={importing}>
                 Cancelar
@@ -443,46 +542,52 @@ export default function Employees() {
                 onClick={handleImport}
                 disabled={!importFile || importing}
               >
-                {importing ? 'Importando empleados...' : 'Cargar Archivo'}
+                {importing ? 'Importando...' : 'Cargar Archivo'}
               </button>
             </>
-          ) : (
-            <button className="btn btn-primary" onClick={closeImportModal}>
-              Cerrar
-            </button>
           )
         }
       >
-        {!importResult ? (
+        {importing ? (
           <div>
-            <p style={{ marginBottom: 12, color: 'var(--gray-600)', fontSize: '0.9375rem' }}>
-              Selecciona un archivo Excel (.xlsx) con la información de empleados y beneficiarios para importar.
+            <p style={{ textAlign: 'center', color: 'var(--gray-500)', fontSize: '0.9375rem' }}>
+              Importando empleados y beneficiarios. Esto puede tardar unos segundos...
             </p>
-            <div className="form-group">
-              <label>Archivo Excel</label>
-              <input
-                type="file"
-                accept=".xlsx"
-                onChange={handleImportFileChange}
-                disabled={importing}
-                key={importFile ? importFile.name : 'empty'}
-              />
-            </div>
-            {importing && (
-              <p style={{ textAlign: 'center', marginTop: 12, color: 'var(--gray-500)' }}>
-                Importando empleados...
+          </div>
+        ) : importError ? (
+          <div>
+            <p style={{ marginBottom: 12, fontWeight: 500, color: 'var(--danger, #dc2626)' }}>
+              Error en la importación
+            </p>
+            <p style={{ color: 'var(--danger, #dc2626)', fontSize: '0.875rem', marginBottom: 12 }}>
+              {importError}
+            </p>
+            {importFile && (
+              <p style={{ fontSize: '0.8125rem', color: 'var(--gray-500)' }}>
+                Archivo: {importFile.name}
               </p>
             )}
           </div>
-        ) : (
+        ) : importResult ? (
           <div>
-            <p style={{ marginBottom: 12, fontWeight: 500, color: 'var(--success, #16a34a)' }}>
-              Importación completada
-            </p>
+            {importResult.errors && importResult.errors.length > 0 ? (
+              <p style={{ marginBottom: 12, fontWeight: 500, color: '#d97706' }}>
+                Importación completada con observaciones
+              </p>
+            ) : (
+              <p style={{ marginBottom: 12, fontWeight: 500, color: 'var(--success, #16a34a)' }}>
+                Importación completada exitosamente
+              </p>
+            )}
+            {importError && (
+              <p style={{ color: 'var(--danger, #dc2626)', fontSize: '0.875rem', marginBottom: 12, padding: '8px 12px', background: '#fef2f2', borderRadius: 4 }}>
+                {importError}
+              </p>
+            )}
             <table style={{ width: '100%', fontSize: '0.875rem' }}>
               <tbody>
                 <tr>
-                  <td style={{ padding: '4px 8px', color: 'var(--gray-500)' }}>Total de filas</td>
+                  <td style={{ padding: '4px 8px', color: 'var(--gray-500)' }}>Total de filas procesadas</td>
                   <td style={{ padding: '4px 8px', fontWeight: 600 }}>{importResult.totalRows}</td>
                 </tr>
                 <tr>
@@ -527,6 +632,38 @@ export default function Employees() {
                 )}
               </tbody>
             </table>
+          </div>
+        ) : (
+          <div>
+            <p style={{ marginBottom: 12, color: 'var(--gray-600)', fontSize: '0.9375rem' }}>
+              Selecciona un archivo Excel (.xlsx) con la información de empleados y beneficiarios para importar.
+            </p>
+            <div className="form-group">
+              <label>Archivo Excel</label>
+              <input
+                type="file"
+                accept=".xlsx"
+                onChange={handleImportFileChange}
+                disabled={importing}
+              />
+            </div>
+            {importFile && (
+              <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--gray-50)', borderRadius: 4, fontSize: '0.875rem' }}>
+                <p style={{ margin: 0, fontWeight: 500 }}>
+                  Archivo seleccionado: {importFile.name}
+                </p>
+                <p style={{ margin: '4px 0 0', color: 'var(--gray-500)', fontSize: '0.8125rem' }}>
+                  Tamaño: {(importFile.size / (1024 * 1024)).toFixed(2)} MB
+                </p>
+                <button
+                  type="button"
+                  onClick={() => { setImportFile(null); }}
+                  style={{ marginTop: 8, background: 'none', border: 'none', color: 'var(--danger, #dc2626)', cursor: 'pointer', fontSize: '0.8125rem', padding: 0 }}
+                >
+                  Quitar archivo
+                </button>
+              </div>
+            )}
           </div>
         )}
       </Modal>

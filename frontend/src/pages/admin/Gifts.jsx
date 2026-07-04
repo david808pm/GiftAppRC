@@ -11,12 +11,14 @@ import {
   giftAppUpdateGift,
   giftAppDeleteGift,
   giftAppGetCampaigns,
+  giftAppUploadGiftImage,
   USE_BACKEND,
 } from '../../api/giftAppService';
 import Modal from '../../components/Modal';
 import Toast, { useToast } from '../../components/Toast';
 import EmptyState from '../../components/EmptyState';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import { clearCache } from '../../utils/simpleCache';
 
 const EMPTY_GIFT = {
   campaignId: '',
@@ -32,6 +34,9 @@ const EMPTY_GIFT = {
   imageUrls: '',
   status: 'ACTIVE',
 };
+
+const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_IMAGE_SIZE = 2 * 1024 * 1024; // 2MB
 
 export default function Gifts() {
   const { isReadOnly } = useOutletContext() || {};
@@ -49,6 +54,10 @@ export default function Gifts() {
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [imageError, setImageError] = useState('');
 
   const loadData = async () => {
     if (USE_BACKEND) {
@@ -93,6 +102,9 @@ export default function Gifts() {
     setEditing(null);
     setForm({ ...EMPTY_GIFT, campaignId: campaigns[0]?.id || '' });
     setErrors({});
+    setSelectedImage(null);
+    setImagePreview(null);
+    setImageError('');
     setShowModal(true);
   };
 
@@ -106,6 +118,9 @@ export default function Gifts() {
       imageUrls: (gift.imageUrls || []).join(', '),
     });
     setErrors({});
+    setSelectedImage(null);
+    setImagePreview(null);
+    setImageError('');
     setShowModal(true);
   };
 
@@ -141,11 +156,32 @@ export default function Gifts() {
 
     setSaving(true);
     try {
+      let giftId;
       if (editing) {
         await giftAppUpdateGift(editing.id, giftData);
+        giftId = editing.id;
       } else {
-        await giftAppCreateGift(giftData);
+        const created = await giftAppCreateGift(giftData);
+        giftId = created.id;
       }
+
+      // Upload image if a file was selected
+      if (selectedImage && USE_BACKEND) {
+        setUploading(true);
+        try {
+          await giftAppUploadGiftImage(giftId, selectedImage);
+        } catch (uploadErr) {
+          addToast(
+            'Regalo guardado, pero no se pudo subir la imagen: ' +
+              (uploadErr.message || 'Error desconocido'),
+            'warning',
+          );
+        } finally {
+          setUploading(false);
+        }
+      }
+
+      clearCache('gifts_all');
       await loadData();
       setShowModal(false);
       addToast(editing ? 'Regalo actualizado.' : 'Regalo creado.');
@@ -179,6 +215,39 @@ export default function Gifts() {
   const updateField = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     setErrors((prev) => ({ ...prev, [field]: '' }));
+  };
+
+  const handleImageSelect = (e) => {
+    const file = e.target.files?.[0];
+    setImageError('');
+
+    if (!file) {
+      setSelectedImage(null);
+      setImagePreview(null);
+      return;
+    }
+
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+      setImageError('Tipo de archivo no permitido. Use: JPEG, PNG o WebP.');
+      setSelectedImage(null);
+      setImagePreview(null);
+      e.target.value = '';
+      return;
+    }
+
+    if (file.size > MAX_IMAGE_SIZE) {
+      setImageError('El archivo excede el tamaño máximo de 2MB.');
+      setSelectedImage(null);
+      setImagePreview(null);
+      e.target.value = '';
+      return;
+    }
+
+    setSelectedImage(file);
+
+    const reader = new FileReader();
+    reader.onload = (ev) => setImagePreview(ev.target.result);
+    reader.readAsDataURL(file);
   };
 
   if (USE_BACKEND && loading) {
@@ -245,6 +314,7 @@ export default function Gifts() {
             <table>
               <thead>
                 <tr>
+                  <th>Imagen</th>
                   <th>Nombre</th>
                   <th>Referencia</th>
                   <th>Campaña</th>
@@ -258,6 +328,25 @@ export default function Gifts() {
               <tbody>
                 {filtered.map((g) => (
                   <tr key={g.id}>
+                    <td>
+                      <img
+                        src={
+                          g.imageUrls?.[0] ||
+                          'https://placehold.co/48x48/CCCCCC/666?text='
+                        }
+                        alt={g.name}
+                        style={{
+                          width: 48,
+                          height: 48,
+                          objectFit: 'cover',
+                          borderRadius: 4,
+                        }}
+                        onError={(e) => {
+                          e.target.src =
+                            'https://placehold.co/48x48/CCCCCC/666?text=';
+                        }}
+                      />
+                    </td>
                     <td style={{ fontWeight: 500 }}>{g.name}</td>
                     <td><code>{g.reference}</code></td>
                     <td>{getCampaignName(g.campaignId)}</td>
@@ -304,8 +393,8 @@ export default function Gifts() {
             <button className="btn btn-outline" onClick={() => setShowModal(false)} disabled={saving}>
               Cancelar
             </button>
-            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-              {saving ? 'Guardando...' : editing ? 'Actualizar' : 'Crear'}
+            <button className="btn btn-primary" onClick={handleSave} disabled={saving || uploading}>
+              {uploading ? 'Subiendo imagen...' : saving ? 'Guardando...' : editing ? 'Actualizar' : 'Crear'}
             </button>
           </>
         }
@@ -419,7 +508,39 @@ export default function Gifts() {
           </select>
         </div>
         <div className="form-group">
-          <label>URLs de Imágenes (separadas por coma)</label>
+          <label>Subir Imagen desde Computador</label>
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={handleImageSelect}
+            disabled={saving || uploading}
+          />
+          {selectedImage && (
+            <div style={{ marginTop: 8, fontSize: '0.8125rem', color: 'var(--gray-600)' }}>
+              <span>{selectedImage.name}</span>
+              {' — '}
+              <span>{(selectedImage.size / 1024).toFixed(1)} KB</span>
+            </div>
+          )}
+          {imageError && <p className="form-error">{imageError}</p>}
+          {imagePreview && (
+            <div style={{ marginTop: 8 }}>
+              <img
+                src={imagePreview}
+                alt="Previsualización"
+                style={{
+                  maxWidth: 200,
+                  maxHeight: 200,
+                  objectFit: 'contain',
+                  borderRadius: 6,
+                  border: '1px solid var(--gray-200)',
+                }}
+              />
+            </div>
+          )}
+        </div>
+        <div className="form-group">
+          <label>O URLs de Imágenes Externas (separadas por coma)</label>
           <textarea
             value={form.imageUrls}
             onChange={(e) => updateField('imageUrls', e.target.value)}

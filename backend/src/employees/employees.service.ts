@@ -18,7 +18,7 @@ export class EmployeesService {
   // ── Admin: list ──────────────────────────────────────────
 
   async findAll(query: EmployeeQueryDto, user?: { role: string; companyId?: number }) {
-    const { search, campaignId, status, includeDeleted } = query;
+    const { search, campaignId, status, includeDeleted, page, pageSize } = query;
 
     const where: Prisma.EmployeeWhereInput = {};
 
@@ -39,6 +39,9 @@ export class EmployeesService {
         { fullName: { contains: search, mode: 'insensitive' } },
         { documentId: { contains: search, mode: 'insensitive' } },
         { email: { contains: search, mode: 'insensitive' } },
+        { phone: { contains: search, mode: 'insensitive' } },
+        { shippingCity: { contains: search, mode: 'insensitive' } },
+        { shippingAddress: { contains: search, mode: 'insensitive' } },
       ];
     }
 
@@ -58,13 +61,40 @@ export class EmployeesService {
       };
     }
 
+    const baseInclude = {
+      campaign: { select: { id: true, name: true, slug: true } },
+      createdBy: { select: { id: true, name: true, email: true } },
+      updatedBy: { select: { id: true, name: true, email: true } },
+    } as const;
+
+    // Paginated mode — when page and pageSize are provided
+    if (page !== undefined && pageSize !== undefined) {
+      const [data, total] = await Promise.all([
+        this.prisma.employee.findMany({
+          where,
+          include: baseInclude,
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+        this.prisma.employee.count({ where }),
+      ]);
+
+      return {
+        data,
+        meta: {
+          page,
+          pageSize,
+          total,
+          totalPages: Math.ceil(total / pageSize),
+        },
+      };
+    }
+
+    // Backward-compatible mode — returns flat array
     return this.prisma.employee.findMany({
       where,
-      include: {
-        campaign: { select: { id: true, name: true, slug: true } },
-        createdBy: { select: { id: true, name: true, email: true } },
-        updatedBy: { select: { id: true, name: true, email: true } },
-      },
+      include: baseInclude,
       orderBy: { createdAt: 'desc' },
     });
   }

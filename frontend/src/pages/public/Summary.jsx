@@ -43,25 +43,47 @@ export default function Summary() {
       const sessionRaw = sessionStorage.getItem(`giftapp_session_${slug}`);
       const selectionsRaw = sessionStorage.getItem(`giftapp_selections_${slug}`);
 
-      if (!sessionRaw || !selectionsRaw) {
+      if (!sessionRaw) {
         navigate(`/campaign/${slug}/login`);
         return;
       }
 
-      let session, selItems;
+      let session;
       try {
         session = JSON.parse(sessionRaw);
-        selItems = JSON.parse(selectionsRaw);
       } catch {
         navigate(`/campaign/${slug}/login`);
         return;
+      }
+
+      // selectionsRaw may be absent if the employee already confirmed
+      // (selections are cleared after confirmation). In that case we still
+      // check the employee status before deciding where to redirect.
+      let selItems = null;
+      if (selectionsRaw) {
+        try {
+          selItems = JSON.parse(selectionsRaw);
+        } catch {
+          navigate(`/campaign/${slug}/login`);
+          return;
+        }
       }
 
       if (USE_BACKEND) {
         setLoading(true);
         try {
           const sessionData = await giftAppGetPublicEmployeeSession();
-          if (!sessionData || sessionData.employee.status === 'CONFIRMED') {
+          if (!sessionData) {
+            navigate(`/campaign/${slug}/login`);
+            return;
+          }
+          if (sessionData.employee.status === 'CONFIRMED') {
+            navigate(`/campaign/${slug}/already-confirmed`);
+            return;
+          }
+
+          // Not confirmed but no selections stored — send back to login.
+          if (!selItems) {
             navigate(`/campaign/${slug}/login`);
             return;
           }
@@ -101,7 +123,7 @@ export default function Summary() {
           setLoading(false);
         } catch (err) {
           if (cancelled) return;
-          if (err.message?.includes('Sesión') || err.message?.includes('401')) {
+          if (err.status === 401) {
             navigate(`/campaign/${slug}/login`);
           } else {
             setLoadError('No fue posible cargar el resumen de la selección.');
@@ -124,6 +146,12 @@ export default function Summary() {
         );
 
         if (!emp) {
+          navigate(`/campaign/${slug}/login`);
+          return;
+        }
+
+        // Demo mode: if no selections stored, send back to login.
+        if (!selItems) {
           navigate(`/campaign/${slug}/login`);
           return;
         }

@@ -29,7 +29,9 @@
       "Bash(sed -E 's/\\(\"access_token\":\"\\)[^\"]+/\\\\1[TOKEN_OCULTO]/' /tmp/login.json)",
       "Bash(curl -s -m 10 -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:5173/)",
       "Bash(curl -s -m 12 -i -X OPTIONS http://localhost:3001/api/auth/login -H \"Origin: http://localhost:5173\" -H \"Access-Control-Request-Method: POST\" -H \"Access-Control-Request-Headers: content-type\")",
-      "Bash(curl -s -m 15 -X POST http://localhost:3001/api/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"admin@giftapp.com\",\"password\":\"Admin123!\"}')"
+      "Bash(curl -s -m 15 -X POST http://localhost:3001/api/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"admin@giftapp.com\",\"password\":\"Admin123!\"}')",
+      "Bash(brew install *)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" https://alert-innovation-strictly-exercises.trycloudflare.com)"
     ]
   }
 }

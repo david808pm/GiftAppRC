@@ -6,6 +6,7 @@ import {
   giftAppUpdateAdminUser,
   giftAppChangeAdminUserPassword,
   giftAppUpdateAdminUserStatus,
+  giftAppGetCompanies,
   USE_BACKEND,
 } from '../../api/giftAppService';
 import Modal from '../../components/Modal';
@@ -50,9 +51,7 @@ export default function AdminUsers() {
     try {
       const [usersData, companiesData] = await Promise.all([
         giftAppGetAdminUsers(),
-        USE_BACKEND ? 
-          (await import('../../api/giftAppService')).giftAppGetCampaigns().then(c => c.map(camp => ({ id: camp.id, name: camp.name }))) :
-          Promise.resolve([]),
+        USE_BACKEND ? giftAppGetCompanies() : Promise.resolve([]),
       ]);
       setUsers(usersData);
       setCompanies(companiesData);

@@ -173,7 +173,7 @@ export class PublicSelectionService {
   ) {
     const { employeeId, campaignId } = user;
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.directClient.$transaction(async (tx) => {
       // 1. Validate campaign
       const campaign = await tx.campaign.findUnique({
         where: { id: campaignId },
@@ -343,6 +343,12 @@ export class PublicSelectionService {
           select: { stock: true },
         });
         const newStock = giftAfter?.stock ?? previousStock - 1;
+
+        // Update the in-memory gift snapshot so that a subsequent item
+        // selecting the same gift reads the current stock for an accurate
+        // StockMovement.previousStock. The authoritative decrement is the
+        // updateMany above — this only keeps the audit trail consistent.
+        gift.stock = newStock;
 
         // Create SelectionItem
         const selectionItem = await tx.selectionItem.create({

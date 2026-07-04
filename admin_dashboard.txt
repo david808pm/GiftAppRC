@@ -1,0 +1,2 @@
+uid=12_0 RootWebArea "GiftApp - Selección de Regalos Corporativos" url="http://localhost:5173/admin/dashboard"
+  uid=13_0 StaticText "Verificando sesión..."

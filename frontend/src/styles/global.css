@@ -757,6 +757,8 @@ table tr:hover td {
 
 .admin-sidebar {
   width: 240px;
+  min-width: 240px;
+  flex-basis: auto;
   background: var(--gray-900);
   color: white;
   padding: 16px 0;
@@ -765,23 +767,73 @@ table tr:hover td {
   top: 0;
   height: 100vh;
   overflow-y: auto;
+  transition: width 100ms ease-out;
 }
 
 .admin-sidebar .sidebar-header {
   padding: 0 20px 16px;
   border-bottom: 1px solid var(--gray-700);
   margin-bottom: 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.sidebar-toggle {
+  background: none;
+  border: 1px solid var(--gray-600);
+  color: var(--gray-300);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1.125rem;
+  line-height: 1;
+  padding: 4px 8px;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.sidebar-toggle:hover {
+  background: var(--gray-700);
+  color: white;
+  border-color: var(--gray-400);
+}
+
+.sidebar-toggle-inline {
+  margin-top: 2px;
+}
+
+.sidebar-toggle-floating {
+  position: fixed;
+  top: 17px;
+  left: 20px;
+  z-index: 1000;
+  padding: 6px 10px;
+  background: var(--gray-800);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.admin-sidebar .sidebar-header .sidebar-header-info {
+  min-width: 0;
+  overflow: hidden;
+  flex: 1;
 }
 
 .admin-sidebar .sidebar-header h2 {
   font-size: 1.125rem;
   font-weight: 700;
   color: white;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .admin-sidebar .sidebar-header small {
   color: var(--gray-400);
   font-size: 0.75rem;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .admin-sidebar nav a {
@@ -791,7 +843,7 @@ table tr:hover td {
   padding: 10px 20px;
   color: var(--gray-300);
   font-size: 0.875rem;
-  transition: all 0.15s;
+  transition: background 0.15s, color 0.15s;
   text-decoration: none;
 }
 
@@ -812,10 +864,61 @@ table tr:hover td {
   border-top: 1px solid var(--gray-700);
 }
 
+/* ── Sidebar collapsed ─────────────────────────────── */
+
+.sidebar-collapsed .admin-sidebar {
+  width: 0;
+  min-width: 0;
+  flex-basis: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar-collapsed .admin-main {
+  flex: 1 1 100%;
+  width: 100%;
+  padding-left: 52px;
+}
+
+@media (max-width: 768px) {
+  .sidebar-toggle-inline {
+    display: none;
+  }
+
+  .sidebar-toggle-floating {
+    display: none !important;
+  }
+
+  .sidebar-collapsed .admin-main {
+    padding-left: 0;
+  }
+
+  .sidebar-collapsed .admin-sidebar {
+    width: 0;
+    min-width: 0;
+    flex-basis: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
 .admin-main {
   flex: 1;
   background: var(--gray-50);
   overflow-x: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-sidebar,
+  .sidebar-toggle {
+    transition: none !important;
+  }
 }
 
 .admin-topbar {
@@ -1118,4 +1221,48 @@ textarea:focus-visible,
 }
 .mb-4 {
   margin-bottom: 16px;
+}
+
+/* ── Pagination ────────────────────────────────── */
+
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.pagination-info {
+  color: var(--gray-500);
+  font-size: 0.875rem;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pagination-current {
+  font-size: 0.875rem;
+  color: var(--gray-600);
+  white-space: nowrap;
+}
+
+.pagination-page-size {
+  padding: 4px 8px;
+  border: 1px solid var(--gray-300);
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  background: white;
+  color: var(--gray-700);
+  cursor: pointer;
+}
+
+.pagination-page-size:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-light);
 }

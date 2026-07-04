@@ -8,6 +8,7 @@ import {
   USE_BACKEND,
 } from '../../api/giftAppService';
 import EmptyState from '../../components/EmptyState';
+import Toast, { useToast } from '../../components/Toast';
 
 export default function Selections() {
   const [selections, setSelections] = useState([]);
@@ -17,6 +18,7 @@ export default function Selections() {
   const [loading, setLoading] = useState(USE_BACKEND);
   const [error, setError] = useState(null);
   const [exporting, setExporting] = useState(false);
+  const { toasts, addToast, removeToast } = useToast();
 
   const loadData = async () => {
     if (USE_BACKEND) {
@@ -71,8 +73,8 @@ export default function Selections() {
         a.download = `envios_selecciones_${new Date().toISOString().slice(0, 10)}.xlsx`;
         a.click();
         URL.revokeObjectURL(url);
-      } catch {
-        // silently ignore export errors
+      } catch (err) {
+        addToast(err.message || 'No fue posible exportar las selecciones.', 'error');
       } finally {
         setExporting(false);
       }
@@ -194,6 +196,7 @@ export default function Selections() {
           </div>
         )}
       </div>
+      <Toast toasts={toasts} onRemove={removeToast} />
     </div>
   );
 }

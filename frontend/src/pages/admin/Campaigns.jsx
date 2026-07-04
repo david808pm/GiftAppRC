@@ -156,6 +156,9 @@ export default function Campaigns() {
         result = await giftAppUpdateCampaign(editing.id, form);
       } else {
         result = await giftAppCreateCampaign(form);
+        // Switch to edit mode immediately so a logo-upload failure doesn't
+        // allow re-submitting and creating a duplicate campaign.
+        setEditing(result);
       }
 
       const campaignId = result?.id || editing?.id;
@@ -354,27 +357,30 @@ export default function Campaigns() {
           {errors.name && <p className="form-error">{errors.name}</p>}
         </div>
         {!editing && form.companyId && form.name && companies.find((c) => String(c.id) === String(form.companyId)) && (
-          <div className="form-group">
-            <label style={{ fontSize: '0.75rem', color: 'var(--gray-500)' }}>
-              URL pública generada
-            </label>
-            <p style={{ fontSize: '0.875rem', color: 'var(--gray-700)', margin: '4px 0 0 0' }}>
-              <code>
-                /campaign/{companies.find((c) => String(c.id) === String(form.companyId))?.slug || ''}
-                {form.name
-                  ? '-' +
-                    form.name
-                      .toLowerCase()
-                      .normalize('NFD')
-                      .replace(/[\u0300-\u036f]/g, '')
-                      .replace(/[^a-z0-9\s-]/g, '')
-                      .replace(/\s+/g, '-')
-                      .replace(/-+/g, '-')
-                      .replace(/^-|-$/g, '')
-                  : ''}
-              </code>
-            </p>
-          </div>
+          (() => {
+            const company = companies.find((c) => String(c.id) === String(form.companyId));
+            const campaignSlugPart = form.name
+              .toLowerCase()
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/[^a-z0-9\s-]/g, '')
+              .replace(/\s+/g, '-')
+              .replace(/-+/g, '-')
+              .replace(/^-|-$/g, '');
+            const previewSlug = company && campaignSlugPart.startsWith(`${company.slug}-`)
+              ? campaignSlugPart
+              : (company ? `${company.slug}-${campaignSlugPart}` : campaignSlugPart);
+            return (
+              <div className="form-group">
+                <label style={{ fontSize: '0.75rem', color: 'var(--gray-500)' }}>
+                  URL pública generada
+                </label>
+                <p style={{ fontSize: '0.875rem', color: 'var(--gray-700)', margin: '4px 0 0 0' }}>
+                  <code>/campaign/{previewSlug}</code>
+                </p>
+              </div>
+            );
+          })()
         )}
         {editing && (
           <div className="form-group">

@@ -33,10 +33,14 @@ export async function getAdminMe() {
   try {
     const data = await apiClient.get('/auth/me');
     return data;
-  } catch {
-    // If the /me call fails (401/403 from backend), return null.
-    // The caller (giftAppService / AdminLayout) will handle redirect.
-    clearAdminToken();
+  } catch (err) {
+    // Only clear token on confirmed 401 (auth failure).
+    // apiClient already clears the token on 401 before throwing.
+    // For non-401 errors (400/500/network), preserve the
+    // valid token so the user is not logged out by a transient error.
+    if (err?.status === 401) {
+      clearAdminToken();
+    }
     return null;
   }
 }
@@ -148,6 +152,12 @@ export async function updateGift(id, data) {
 
 export async function deleteGift(id) {
   return apiClient.delete(`/admin/gifts/${id}`);
+}
+
+export async function uploadGiftImage(giftId, file) {
+  const formData = new FormData();
+  formData.append('image', file);
+  return apiClient.upload(`/admin/gifts/${giftId}/images`, formData);
 }
 
 export async function fetchSelections(query = {}) {
@@ -276,7 +286,9 @@ async function publicRequest(method, path, body = null) {
 
   if (response.status === 401) {
     clearPublicEmployeeSession();
-    throw new Error('Sesión expirada. Inicia sesión nuevamente.');
+    const err = new Error('Sesión expirada. Inicia sesión nuevamente.');
+    err.status = 401;
+    throw err;
   }
 
   let data;

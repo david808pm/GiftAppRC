@@ -56,7 +56,7 @@ export default function AlreadyConfirmed() {
           setLoading(false);
         } catch (err) {
           if (cancelled) return;
-          if (err.message?.includes('Sesión') || err.message?.includes('401')) {
+          if (err.status === 401) {
             navigate(`/campaign/${slug}/login`);
           } else {
             setLoadError('No se encontró una selección confirmada.');

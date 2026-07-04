@@ -27,9 +27,9 @@ async function bootstrap() {
   // Global prefix
   app.setGlobalPrefix('api');
 
-  // CORS — restrict to frontend origin in production
+  // CORS — allow frontend origins (localhost, tunnel, etc.)
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: true,
     credentials: true,
   });
 

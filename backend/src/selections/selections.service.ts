@@ -103,12 +103,12 @@ export class SelectionsService {
 
     if (query.search) {
       where.OR = [
-        { employeeNameSnapshot: { contains: query.search } },
-        { employeeDocumentIdSnapshot: { contains: query.search } },
-        { campaignNameSnapshot: { contains: query.search } },
-        { items: { some: { beneficiaryNameSnapshot: { contains: query.search } } } },
-        { items: { some: { giftNameSnapshot: { contains: query.search } } } },
-        { items: { some: { giftReferenceSnapshot: { contains: query.search } } } },
+        { employeeNameSnapshot: { contains: query.search, mode: 'insensitive' } },
+        { employeeDocumentIdSnapshot: { contains: query.search, mode: 'insensitive' } },
+        { campaignNameSnapshot: { contains: query.search, mode: 'insensitive' } },
+        { items: { some: { beneficiaryNameSnapshot: { contains: query.search, mode: 'insensitive' } } } },
+        { items: { some: { giftNameSnapshot: { contains: query.search, mode: 'insensitive' } } } },
+        { items: { some: { giftReferenceSnapshot: { contains: query.search, mode: 'insensitive' } } } },
       ];
     }
 

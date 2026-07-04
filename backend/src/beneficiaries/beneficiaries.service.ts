@@ -16,7 +16,7 @@ export class BeneficiariesService {
   // ── Admin: list ──────────────────────────────────────────
 
   async findAll(query: BeneficiaryQueryDto, user?: { role: string; companyId?: number }) {
-    const { search, employeeId, campaignId, gender, includeDeleted } = query;
+    const { search, employeeId, campaignId, gender, includeDeleted, page, pageSize } = query;
 
     const where: Prisma.BeneficiaryWhereInput = {};
 
@@ -68,21 +68,48 @@ export class BeneficiariesService {
       };
     }
 
+    const baseInclude = {
+      employee: {
+        select: {
+          id: true,
+          fullName: true,
+          documentId: true,
+          campaignId: true,
+          campaign: { select: { id: true, name: true, slug: true } },
+        },
+      },
+      createdBy: { select: { id: true, name: true, email: true } },
+      updatedBy: { select: { id: true, name: true, email: true } },
+    } as const;
+
+    // Paginated mode — when page and pageSize are provided
+    if (page !== undefined && pageSize !== undefined) {
+      const [data, total] = await Promise.all([
+        this.prisma.beneficiary.findMany({
+          where,
+          include: baseInclude,
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+        this.prisma.beneficiary.count({ where }),
+      ]);
+
+      return {
+        data,
+        meta: {
+          page,
+          pageSize,
+          total,
+          totalPages: Math.ceil(total / pageSize),
+        },
+      };
+    }
+
+    // Backward-compatible mode — returns flat array
     return this.prisma.beneficiary.findMany({
       where,
-      include: {
-        employee: {
-          select: {
-            id: true,
-            fullName: true,
-            documentId: true,
-            campaignId: true,
-            campaign: { select: { id: true, name: true, slug: true } },
-          },
-        },
-        createdBy: { select: { id: true, name: true, email: true } },
-        updatedBy: { select: { id: true, name: true, email: true } },
-      },
+      include: baseInclude,
       orderBy: { createdAt: 'desc' },
     });
   }

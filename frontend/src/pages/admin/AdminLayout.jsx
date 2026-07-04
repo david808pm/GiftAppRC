@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link, useLocation, Outlet } from 'react-router-dom';
 import { getAdminSession, clearAdminSession } from '../../api/localStorageService';
+import { getStoredToken } from '../../api/apiClient';
 import {
   giftAppGetAdminSession,
   giftAppClearAdminSession,
@@ -28,6 +29,7 @@ export default function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // ── Demo mode ──────────────────────────────────────────
 
@@ -45,6 +47,7 @@ export default function AdminLayout() {
 
   const [backendSession, setBackendSession] = useState(null);
   const [checking, setChecking] = useState(USE_BACKEND);
+  const [sessionError, setSessionError] = useState(null);
 
   useEffect(() => {
     if (!USE_BACKEND) return;
@@ -56,18 +59,32 @@ export default function AdminLayout() {
         const session = await giftAppGetAdminSession();
         if (cancelled) return;
 
+        // No session returned — could be 401 or transient error.
+        if (!session) {
+          if (getStoredToken()) {
+            // Non-401 error (400/500/network) — token is still valid.
+            // Show retry state instead of clearing the token and logging out.
+            setSessionError('No se pudo validar la sesión. Intenta recargar.');
+          } else {
+            // 401 or no token — apiClient already cleared it.
+            navigate('/admin/login', { replace: true });
+          }
+          if (!cancelled) setChecking(false);
+          return;
+        }
+
         // Accept ADMIN, SUPER_ADMIN, and COMPANY_VIEWER roles
         const allowedRoles = ['ADMIN', 'SUPER_ADMIN', 'COMPANY_VIEWER'];
-        if (!session || !allowedRoles.includes(session.role)) {
+        if (!allowedRoles.includes(session.role)) {
           await giftAppClearAdminSession();
           navigate('/admin/login', { replace: true });
           return;
         }
 
         setBackendSession(session);
+        setSessionError(null);
       } catch {
         if (!cancelled) {
-          await giftAppClearAdminSession();
           navigate('/admin/login', { replace: true });
         }
       } finally {
@@ -100,6 +117,33 @@ export default function AdminLayout() {
     );
   }
 
+  if (USE_BACKEND && sessionError) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'var(--gray-100)',
+          padding: 16,
+        }}
+      >
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ color: 'var(--gray-500)', fontSize: '0.9375rem', marginBottom: 16 }}>
+            {sessionError}
+          </p>
+          <button
+            className="btn btn-primary"
+            onClick={() => window.location.reload()}
+          >
+            Reintentar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // Accept ADMIN, SUPER_ADMIN, and COMPANY_VIEWER roles
   const allowedRoles = ['ADMIN', 'SUPER_ADMIN', 'COMPANY_VIEWER'];
   if (!session || !allowedRoles.includes(session.role)) return null;
@@ -125,11 +169,20 @@ export default function AdminLayout() {
   };
 
   return (
-    <div className="admin-layout">
+    <div className={`admin-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
       <aside className="admin-sidebar">
         <div className="sidebar-header">
-          <h2>GiftApp Admin</h2>
-          <small>{session.name}</small>
+          <button
+            className="sidebar-toggle sidebar-toggle-inline"
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            aria-label="Alternar menú lateral"
+          >
+            ☰
+          </button>
+          <div className="sidebar-header-info">
+            <h2>GiftApp Admin</h2>
+            <small>{session.name}</small>
+          </div>
         </div>
         <nav>
           {navItems.map((item) => (
@@ -155,6 +208,15 @@ export default function AdminLayout() {
           </button>
         </div>
       </aside>
+      {sidebarCollapsed && (
+        <button
+          className="sidebar-toggle sidebar-toggle-floating"
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          aria-label="Alternar menú lateral"
+        >
+          ☰
+        </button>
+      )}
       <main className="admin-main">
         <div className="admin-mobile-header">
           <h2>GiftApp Admin</h2>
