@@ -9,5 +9,5 @@ export class ChangePasswordDto {
     message:
       'La contraseña debe incluir mayúscula, minúscula y número (mínimo 12 caracteres).',
   })
-  password: string;
+  password!: string;
 }

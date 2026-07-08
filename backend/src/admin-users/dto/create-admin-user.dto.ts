@@ -14,10 +14,10 @@ const STRONG_PASSWORD = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{12,}$/;
 export class CreateAdminUserDto {
   @IsString()
   @MinLength(2, { message: 'El nombre debe tener al menos 2 caracteres.' })
-  name: string;
+  name!: string;
 
   @IsEmail({}, { message: 'Formato de correo inválido.' })
-  email: string;
+  email!: string;
 
   @IsString()
   @MinLength(12, { message: 'La contraseña debe tener al menos 12 caracteres.' })
@@ -25,15 +25,15 @@ export class CreateAdminUserDto {
     message:
       'La contraseña debe incluir mayúscula, minúscula y número (mínimo 12 caracteres).',
   })
-  password: string;
+  password!: string;
 
   @IsEnum(['COMPANY_VIEWER'], {
     message: 'El rol debe ser COMPANY_VIEWER.',
   })
-  role: string;
+  role!: string;
 
   @IsInt()
-  companyId: number;
+  companyId!: number;
 
   @IsBoolean()
   @IsOptional()

@@ -154,6 +154,35 @@ a:hover {
   margin-top: 4px;
 }
 
+.privacy-consent {
+  margin: 12px 0 18px;
+  padding: 12px;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  background: var(--gray-50);
+}
+
+.privacy-consent__checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.92rem;
+  color: var(--gray-700);
+  cursor: pointer;
+}
+
+.privacy-consent__checkbox input {
+  margin-top: 3px;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.privacy-consent__links {
+  margin-top: 8px;
+  font-size: 0.875rem;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
