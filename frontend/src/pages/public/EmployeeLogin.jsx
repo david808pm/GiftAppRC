@@ -7,6 +7,7 @@ import {
   USE_BACKEND,
 } from '../../api/giftAppService';
 import ProgressStepper from '../../components/ProgressStepper';
+import PrivacyConsent from '../../components/PrivacyConsent';
 
 export default function EmployeeLogin() {
   const { slug } = useParams();
@@ -21,6 +22,8 @@ export default function EmployeeLogin() {
   const [supportSent, setSupportSent] = useState(false);
   const [supportError, setSupportError] = useState('');
   const [supportSubmitting, setSupportSubmitting] = useState(false);
+  const [consentAccepted, setConsentAccepted] = useState(false);
+  const [consentError, setConsentError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -95,7 +98,13 @@ export default function EmployeeLogin() {
       setError('El ID debe ser numérico.');
       return;
     }
+    if (!consentAccepted) {
+      setConsentError('Debes aceptar la política de privacidad y términos para continuar.');
+      setError('');
+      return;
+    }
 
+    setConsentError('');
     setSubmitting(true);
     try {
       const result = await giftAppPublicEmployeeLogin(slug, documentId.trim());
@@ -207,6 +216,14 @@ export default function EmployeeLogin() {
                 />
                 {error && <p className="form-error">{error}</p>}
               </div>
+              <PrivacyConsent
+                checked={consentAccepted}
+                onChange={(value) => {
+                  setConsentAccepted(value);
+                  if (value) setConsentError('');
+                }}
+                error={consentError}
+              />
               <button
                 type="submit"
                 className="btn btn-primary"
@@ -253,43 +270,43 @@ export default function EmployeeLogin() {
                           }
                           disabled={supportSubmitting}
                         >
-                        <option value="">Selecciona una opción</option>
-                        <option value="NOT_FOUND">
-                          No aparezco en el sistema
-                        </option>
-                        <option value="BENEFICIARY_DATA_INCORRECT">
-                          Los datos de mi beneficiario son incorrectos
-                        </option>
-                        <option value="MISSING_BENEFICIARY">
-                          Falta un beneficiario
-                        </option>
-                        <option value="AGE_GENDER_INCORRECT">
-                          La edad o el género son incorrectos
-                        </option>
-                        <option value="GIFT_SELECTION_PROBLEM">
-                          Tengo un problema con la selección de regalos
-                        </option>
-                        <option value="OTHER">Otro</option>
-                      </select>
-                    </div>
-                    <div className="form-group">
-                      <label>Mensaje</label>
-                      <textarea
-                        value={supportData.message}
-                        onChange={(e) =>
-                          setSupportData({
-                            ...supportData,
-                            message: e.target.value,
-                          })
-                        }
-                        placeholder="Describe tu problema..."
-                        disabled={supportSubmitting}
-                      />
-                    </div>
-                    <button type="submit" className="btn btn-primary btn-sm" disabled={supportSubmitting}>
-                      {supportSubmitting ? 'Enviando...' : 'Enviar Reporte'}
-                    </button>
-                  </form>
+                          <option value="">Selecciona una opción</option>
+                          <option value="NOT_FOUND">
+                            No aparezco en el sistema
+                          </option>
+                          <option value="BENEFICIARY_DATA_INCORRECT">
+                            Los datos de mi beneficiario son incorrectos
+                          </option>
+                          <option value="MISSING_BENEFICIARY">
+                            Falta un beneficiario
+                          </option>
+                          <option value="AGE_GENDER_INCORRECT">
+                            La edad o el género son incorrectos
+                          </option>
+                          <option value="GIFT_SELECTION_PROBLEM">
+                            Tengo un problema con la selección de regalos
+                          </option>
+                          <option value="OTHER">Otro</option>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>Mensaje</label>
+                        <textarea
+                          value={supportData.message}
+                          onChange={(e) =>
+                            setSupportData({
+                              ...supportData,
+                              message: e.target.value,
+                            })
+                          }
+                          placeholder="Describe tu problema..."
+                          disabled={supportSubmitting}
+                        />
+                      </div>
+                      <button type="submit" className="btn btn-primary btn-sm" disabled={supportSubmitting}>
+                        {supportSubmitting ? 'Enviando...' : 'Enviar Reporte'}
+                      </button>
+                    </form>
                   </>
                 )}
               </div>
