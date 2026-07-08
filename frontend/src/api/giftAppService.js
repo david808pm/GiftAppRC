@@ -520,11 +520,16 @@ export async function giftAppUpdateSupportRequest(id, data) {
 // Selections
 // ═══════════════════════════════════════════════════════════
 
-export async function giftAppGetSelections() {
+export async function giftAppGetSelections(params = {}) {
   if (USE_BACKEND) {
     const { fetchSelections } = await getBackendAuth();
-    const selections = await fetchSelections();
-    return selections.flatMap((s) =>
+    const result = await fetchSelections(params);
+    // Paginated response
+    if (result && result.data) {
+      return result;
+    }
+    // Backward-compatible flat array
+    return (result || []).flatMap((s) =>
       (s.items || []).map((item) => ({
         id: `${s.id}-${item.beneficiaryId}`,
         selectionId: s.id,
@@ -639,6 +644,24 @@ export async function giftAppPublicEmployeeLogin(slug, documentId) {
     employee: { id: employee.id, fullName: employee.fullName, documentId: employee.documentId, status: employee.status },
     campaign: { id: campaign.id, name: campaign.name, slug: campaign.slug, logoText: campaign.logoText, primaryColor: campaign.primaryColor },
   };
+}
+
+// ── Email OTP flow (backend only) ─────────────────────────
+// These functions are only used when the campaign response includes
+// otpEnabled === true. They call the new /public/auth/* endpoints.
+
+export async function giftAppPublicRequestOtpCode(slug, documentId) {
+  const { publicRequestOtpCode } = await getBackendAuth();
+  return await publicRequestOtpCode(slug, documentId);
+}
+
+export async function giftAppPublicVerifyOtpCode(slug, documentId, code) {
+  const { publicVerifyOtpCode, storePublicEmployeeToken } = await getBackendAuth();
+  const result = await publicVerifyOtpCode(slug, documentId, code);
+  if (result.accessToken) {
+    storePublicEmployeeToken(result.accessToken);
+  }
+  return result;
 }
 
 export async function giftAppGetPublicEmployeeSession() {

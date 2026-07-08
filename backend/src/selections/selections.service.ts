@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, SelectionStatus } from '@prisma/client';
+import { SelectionQueryDto } from './dto/selection-query.dto';
 import * as ExcelJS from 'exceljs';
 
 function sanitizeExcelCell(value: unknown): string {
@@ -66,49 +67,137 @@ export class SelectionsService {
     },
   };
 
-  async findAll(
-    query: {
-      search?: string;
-      campaignId?: number;
-      employeeId?: number;
-      status?: string;
-      fromDate?: string;
-      toDate?: string;
-    },
-    user?: { role: string; companyId?: number },
-  ) {
+  async findAll(query: SelectionQueryDto, user?: { role: string; companyId?: number }) {
+    const { search, campaignId, employeeId, status, fromDate, toDate, page, pageSize } = query;
+
+    // Paginated mode — when page and pageSize are provided
+    if (page !== undefined && pageSize !== undefined) {
+      const itemWhere: Prisma.SelectionItemWhereInput = {};
+
+      if (campaignId !== undefined) {
+        itemWhere.campaignId = campaignId;
+      }
+      if (employeeId !== undefined) {
+        itemWhere.employeeId = employeeId;
+      }
+      if (status) {
+        const validStatuses: SelectionStatus[] = ['CONFIRMED', 'CANCELLED'];
+        if (!validStatuses.includes(status as SelectionStatus)) {
+          throw new BadRequestException(
+            `Estado inválido. Valores permitidos: ${validStatuses.join(', ')}.`,
+          );
+        }
+        itemWhere.selection = { status: status as SelectionStatus };
+      }
+      if (fromDate) {
+        itemWhere.confirmedAt = { ...(itemWhere.confirmedAt as any), gte: new Date(fromDate) };
+      }
+      if (toDate) {
+        itemWhere.confirmedAt = { ...(itemWhere.confirmedAt as any), lte: new Date(toDate) };
+      }
+
+      if (search) {
+        itemWhere.OR = [
+          { selection: { employeeNameSnapshot: { contains: search, mode: 'insensitive' } } },
+          { selection: { employeeDocumentIdSnapshot: { contains: search, mode: 'insensitive' } } },
+          { selection: { campaignNameSnapshot: { contains: search, mode: 'insensitive' } } },
+          { beneficiaryNameSnapshot: { contains: search, mode: 'insensitive' } },
+          { giftNameSnapshot: { contains: search, mode: 'insensitive' } },
+          { giftReferenceSnapshot: { contains: search, mode: 'insensitive' } },
+        ];
+      }
+
+      // Apply company scoping for COMPANY_VIEWER
+      if (user?.role === 'COMPANY_VIEWER') {
+        if (!user.companyId) {
+          throw new ForbiddenException('No tienes compañía asignada.');
+        }
+        itemWhere.campaign = { companyId: user.companyId };
+      }
+
+      const [data, total] = await Promise.all([
+        this.prisma.selectionItem.findMany({
+          where: itemWhere,
+          include: {
+            selection: {
+              select: {
+                employeeNameSnapshot: true,
+                employeeDocumentIdSnapshot: true,
+                campaignNameSnapshot: true,
+                employeeId: true,
+                status: true,
+              },
+            },
+          },
+          orderBy: { confirmedAt: 'desc' },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+        this.prisma.selectionItem.count({ where: itemWhere }),
+      ]);
+
+      return {
+        data: data.map((item) => ({
+          id: `${item.selectionId}-${item.beneficiaryId}`,
+          selectionId: item.selectionId,
+          campaignId: item.campaignId,
+          employeeId: item.employeeId,
+          campaignName: item.selection.campaignNameSnapshot,
+          employeeName: item.selection.employeeNameSnapshot,
+          employeeDocumentId: item.selection.employeeDocumentIdSnapshot,
+          beneficiaryId: item.beneficiaryId,
+          beneficiaryName: item.beneficiaryNameSnapshot,
+          beneficiaryAge: item.beneficiaryAgeSnapshot,
+          beneficiaryGender: item.beneficiaryGenderSnapshot,
+          giftId: item.giftId,
+          giftName: item.giftNameSnapshot,
+          giftReference: item.giftReferenceSnapshot,
+          giftImageUrl: item.giftImageUrlSnapshot || '',
+          confirmedAt: item.confirmedAt,
+          status: item.selection.status,
+        })),
+        meta: {
+          page,
+          pageSize,
+          total,
+          totalPages: Math.ceil(total / pageSize),
+        },
+      };
+    }
+
+    // Backward-compatible mode — returns flat Selection[] with nested items
     const where: Prisma.SelectionWhereInput = {};
 
-    if (query.campaignId !== undefined) {
-      where.campaignId = query.campaignId;
+    if (campaignId !== undefined) {
+      where.campaignId = campaignId;
     }
-    if (query.employeeId !== undefined) {
-      where.employeeId = query.employeeId;
+    if (employeeId !== undefined) {
+      where.employeeId = employeeId;
     }
-    if (query.status) {
+    if (status) {
       const validStatuses: SelectionStatus[] = ['CONFIRMED', 'CANCELLED'];
-      if (!validStatuses.includes(query.status as SelectionStatus)) {
+      if (!validStatuses.includes(status as SelectionStatus)) {
         throw new BadRequestException(
           `Estado inválido. Valores permitidos: ${validStatuses.join(', ')}.`,
         );
       }
-      where.status = query.status as SelectionStatus;
+      where.status = status as SelectionStatus;
     }
-    if (query.fromDate) {
-      where.confirmedAt = { ...(where.confirmedAt as any), gte: new Date(query.fromDate) };
+    if (fromDate) {
+      where.confirmedAt = { ...(where.confirmedAt as any), gte: new Date(fromDate) };
     }
-    if (query.toDate) {
-      where.confirmedAt = { ...(where.confirmedAt as any), lte: new Date(query.toDate) };
+    if (toDate) {
+      where.confirmedAt = { ...(where.confirmedAt as any), lte: new Date(toDate) };
     }
 
-    if (query.search) {
+    if (search) {
       where.OR = [
-        { employeeNameSnapshot: { contains: query.search, mode: 'insensitive' } },
-        { employeeDocumentIdSnapshot: { contains: query.search, mode: 'insensitive' } },
-        { campaignNameSnapshot: { contains: query.search, mode: 'insensitive' } },
-        { items: { some: { beneficiaryNameSnapshot: { contains: query.search, mode: 'insensitive' } } } },
-        { items: { some: { giftNameSnapshot: { contains: query.search, mode: 'insensitive' } } } },
-        { items: { some: { giftReferenceSnapshot: { contains: query.search, mode: 'insensitive' } } } },
+        { employeeNameSnapshot: { contains: search, mode: 'insensitive' } },
+        { employeeDocumentIdSnapshot: { contains: search, mode: 'insensitive' } },
+        { campaignNameSnapshot: { contains: search, mode: 'insensitive' } },
+        { items: { some: { beneficiaryNameSnapshot: { contains: search, mode: 'insensitive' } } } },
+        { items: { some: { giftNameSnapshot: { contains: search, mode: 'insensitive' } } } },
+        { items: { some: { giftReferenceSnapshot: { contains: search, mode: 'insensitive' } } } },
       ];
     }
 

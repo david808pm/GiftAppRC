@@ -141,6 +141,15 @@ model Employee {
   updatedAt   DateTime       @updatedAt
   deletedAt   DateTime?
 
+  // ── Email OTP (public employee login) ──────────────────────
+  // Hashed with bcrypt; never store or log the plain code.
+  emailOtpHash         String?        @db.VarChar(255)
+  emailOtpExpiresAt    DateTime?
+  emailOtpSentAt       DateTime?
+  emailOtpLastUsedAt   DateTime?
+  emailOtpLockedUntil  DateTime?
+  emailOtpAttempts     Int            @default(0)
+
   @@unique([campaignId, documentId])
   @@index([campaignId])
   @@index([status])
