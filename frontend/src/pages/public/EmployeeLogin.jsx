@@ -9,6 +9,7 @@ import {
   USE_BACKEND,
 } from '../../api/giftAppService';
 import ProgressStepper from '../../components/ProgressStepper';
+import PrivacyConsent from '../../components/PrivacyConsent';
 
 const RESEND_COOLDOWN = 60;
 
@@ -29,6 +30,8 @@ export default function EmployeeLogin() {
   const [supportSent, setSupportSent] = useState(false);
   const [supportError, setSupportError] = useState('');
   const [supportSubmitting, setSupportSubmitting] = useState(false);
+  const [consentAccepted, setConsentAccepted] = useState(false);
+  const [consentError, setConsentError] = useState('');
 
   const otpEnabled = campaign?.otpEnabled === true;
 
@@ -147,7 +150,13 @@ export default function EmployeeLogin() {
       setError('El ID debe ser numérico.');
       return;
     }
+    if (!consentAccepted) {
+      setConsentError('Debes aceptar la política de privacidad y términos para continuar.');
+      setError('');
+      return;
+    }
 
+    setConsentError('');
     setSubmitting(true);
     try {
       const result = await giftAppPublicEmployeeLogin(slug, documentId.trim());
@@ -491,8 +500,51 @@ export default function EmployeeLogin() {
                 : 'Ingresa tu número de identificación para acceder a la selección de regalos.'}
             </p>
 
-            {info && (
-              <p
+            <form onSubmit={handleSubmit}>
+              <div className="form-group">
+                <label>Número de Identificación</label>
+                <input
+                  type="text"
+                  value={documentId}
+                  onChange={(e) => {
+                    setDocumentId(e.target.value);
+                    setError('');
+                  }}
+                  placeholder="ej. 1001"
+                  autoFocus
+                  disabled={submitting}
+                />
+                {error && <p className="form-error">{error}</p>}
+              </div>
+              <PrivacyConsent
+                checked={consentAccepted}
+                onChange={(value) => {
+                  setConsentAccepted(value);
+                  if (value) setConsentError('');
+                }}
+                error={consentError}
+              />
+              <button
+                type="submit"
+                className="btn btn-primary"
+                style={{ width: '100%' }}
+                disabled={submitting}
+              >
+                {submitting ? 'Validando...' : 'Continuar'}
+              </button>
+            </form>
+
+            <div style={{ marginTop: 20, textAlign: 'center' }}>
+              <button
+                className="btn btn-outline btn-sm"
+                onClick={() => setShowSupport(!showSupport)}
+              >
+                Reportar un Problema
+              </button>
+            </div>
+
+            {showSupport && (
+              <div
                 style={{
                   textAlign: 'center',
                   color: 'var(--success)',
@@ -500,8 +552,65 @@ export default function EmployeeLogin() {
                   fontSize: '0.875rem',
                 }}
               >
-                {info}
-              </p>
+                {supportSent ? (
+                  <p style={{ color: 'var(--success)', textAlign: 'center' }}>
+                    Tu reporte ha sido enviado. Lo revisaremos pronto.
+                  </p>
+                ) : (
+                  <>
+                    {supportError && (
+                      <p className="form-error" style={{ marginBottom: 12 }}>{supportError}</p>
+                    )}
+                    <form onSubmit={handleSupportSubmit}>
+                      <div className="form-group">
+                        <label>Tipo de Problema</label>
+                        <select
+                          value={supportData.type}
+                          onChange={(e) =>
+                            setSupportData({ ...supportData, type: e.target.value })
+                          }
+                          disabled={supportSubmitting}
+                        >
+                          <option value="">Selecciona una opción</option>
+                          <option value="NOT_FOUND">
+                            No aparezco en el sistema
+                          </option>
+                          <option value="BENEFICIARY_DATA_INCORRECT">
+                            Los datos de mi beneficiario son incorrectos
+                          </option>
+                          <option value="MISSING_BENEFICIARY">
+                            Falta un beneficiario
+                          </option>
+                          <option value="AGE_GENDER_INCORRECT">
+                            La edad o el género son incorrectos
+                          </option>
+                          <option value="GIFT_SELECTION_PROBLEM">
+                            Tengo un problema con la selección de regalos
+                          </option>
+                          <option value="OTHER">Otro</option>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>Mensaje</label>
+                        <textarea
+                          value={supportData.message}
+                          onChange={(e) =>
+                            setSupportData({
+                              ...supportData,
+                              message: e.target.value,
+                            })
+                          }
+                          placeholder="Describe tu problema..."
+                          disabled={supportSubmitting}
+                        />
+                      </div>
+                      <button type="submit" className="btn btn-primary btn-sm" disabled={supportSubmitting}>
+                        {supportSubmitting ? 'Enviando...' : 'Enviar Reporte'}
+                      </button>
+                    </form>
+                  </>
+                )}
+              </div>
             )}
 
             {otpEnabled && step === 2

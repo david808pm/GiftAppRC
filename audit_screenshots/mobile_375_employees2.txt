@@ -1,6 +1,0 @@
-uid=18_0 RootWebArea "GiftApp - Selección de Regalos Corporativos" url="http://localhost:5173/admin/employees"
-  uid=18_1 main
-    uid=18_2 heading "GiftApp Admin" level="2"
-    uid=18_3 button "Menú"
-    uid=18_4 heading "Empleados" level="1"
-    uid=18_5 StaticText "Cargando empleados..."

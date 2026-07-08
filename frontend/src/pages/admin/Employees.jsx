@@ -15,6 +15,7 @@ import Modal from '../../components/Modal';
 import Toast, { useToast } from '../../components/Toast';
 import EmptyState from '../../components/EmptyState';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import PrivacyConsent from '../../components/PrivacyConsent';
 
 const EMPTY_EMPLOYEE = {
   campaignId: '',
@@ -56,6 +57,8 @@ export default function Employees() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [importError, setImportError] = useState(null);
+  const [consentAccepted, setConsentAccepted] = useState(false);
+  const [consentError, setConsentError] = useState('');
 
   const loadData = useCallback(async (opts = {}) => {
     if (USE_BACKEND) setLoading(true);
@@ -126,13 +129,24 @@ export default function Employees() {
     setEditing(null);
     setForm({ ...EMPTY_EMPLOYEE, campaignId: campaigns[0]?.id || '' });
     setErrors({});
+    setConsentAccepted(false);
+    setConsentError('');
     setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setErrors({});
+    setConsentAccepted(false);
+    setConsentError('');
   };
 
   const openEdit = (emp) => {
     setEditing(emp);
     setForm({ ...emp });
     setErrors({});
+    setConsentAccepted(false);
+    setConsentError('');
     setShowModal(true);
   };
 
@@ -147,6 +161,9 @@ export default function Employees() {
       if (numErr) errs.documentId = numErr;
     }
     if (!form.campaignId) errs.campaignId = 'La campaña es obligatoria.';
+    if (!consentAccepted) {
+      errs.consent = 'Debes aceptar la política de privacidad para guardar datos del empleado.';
+    }
 
     if (!editing) {
       const existing = employees.find(
@@ -164,6 +181,11 @@ export default function Employees() {
     }
 
     setErrors(errs);
+    if (!consentAccepted) {
+      setConsentError('Debes aceptar la política de privacidad para guardar datos del empleado.');
+    } else {
+      setConsentError('');
+    }
     return Object.keys(errs).length === 0;
   };
 
@@ -292,7 +314,7 @@ export default function Employees() {
                 Importar Excel
               </button>
             )}
-            <button className="btn btn-primary btn-sm" onClick={openCreate}>
+            <button type="button" className="btn btn-primary btn-sm" onClick={openCreate}>
               + Nuevo Empleado
             </button>
           </div>
@@ -427,14 +449,14 @@ export default function Employees() {
 
       <Modal
         isOpen={showModal}
-        onClose={() => setShowModal(false)}
+        onClose={closeModal}
         title={editing ? 'Editar Empleado' : 'Nuevo Empleado'}
         footer={
           <>
-            <button className="btn btn-outline" onClick={() => setShowModal(false)} disabled={saving}>
+            <button type="button" className="btn btn-outline" onClick={closeModal} disabled={saving}>
               Cancelar
             </button>
-            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+            <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saving}>
               {saving ? 'Guardando...' : editing ? 'Actualizar' : 'Crear'}
             </button>
           </>
@@ -521,6 +543,14 @@ export default function Employees() {
             <option value="BLOCKED">Bloqueado</option>
           </select>
         </div>
+        <PrivacyConsent
+          checked={consentAccepted}
+          onChange={(value) => {
+            setConsentAccepted(value);
+            if (value) setConsentError('');
+          }}
+          error={consentError}
+        />
       </Modal>
 
       <Modal
