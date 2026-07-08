@@ -270,7 +270,11 @@ export class CampaignsService {
       throw new NotFoundException('Campaña no encontrada.');
     }
 
-    // Return safe public fields only
+    // Return safe public fields only. `otpEnabled` is derived from the
+    // backend feature flag PUBLIC_LOGIN_OTP_ENABLED so the frontend can
+    // decide which login flow to render. No secrets are exposed.
+    const otpEnabled = (process.env.PUBLIC_LOGIN_OTP_ENABLED === 'true');
+
     return {
       id: campaign.id,
       name: campaign.name,
@@ -281,6 +285,7 @@ export class CampaignsService {
       logoText: campaign.logoText,
       primaryColor: campaign.primaryColor,
       logoImageUrl: campaign.logoImageUrl,
+      otpEnabled,
     };
   }
 }

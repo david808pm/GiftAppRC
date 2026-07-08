@@ -310,6 +310,23 @@ export async function publicEmployeeLogin(slug, documentId) {
   return publicRequest('POST', `/public/campaigns/${slug}/employee-login`, { documentId });
 }
 
+// ── Public Employee Auth — Email OTP ──────────────────────
+
+export async function publicRequestOtpCode(campaignSlug, documentId) {
+  return publicRequest('POST', '/public/auth/request-code', {
+    campaignSlug,
+    documentId,
+  });
+}
+
+export async function publicVerifyOtpCode(campaignSlug, documentId, code) {
+  return publicRequest('POST', '/public/auth/verify-code', {
+    campaignSlug,
+    documentId,
+    code,
+  });
+}
+
 export async function getPublicEmployeeMe() {
   const token = getPublicEmployeeToken();
   if (!token) return null;

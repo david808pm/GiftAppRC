@@ -1,7 +1,7 @@
 # GiftApp — HANDOFF Document
 
 > Documento de transferencia para retomar el proyecto en una nueva sesión.
-> Última actualización: 4 de julio de 2026.
+> Última actualización: 6 de julio de 2026.
 
 ---
 
@@ -32,23 +32,33 @@ mimo-regalostestv4/
 │   │   ├── beneficiaries/         # CRUD beneficiarios [MODIFICADO] Paginación server-side
 │   │   ├── campaigns/             # CRUD campañas + público por slug [MODIFICADO] Fix slug duplicado
 │   │   ├── common/
-│   │   │   ├── config/env.ts      # Validación de variables de entorno
-│   │   │   ├── decorators/roles.decorator.ts
-│   │   │   ├── filters/http-exception.filter.ts
-│   │   │   ├── guards/roles.guard.ts
-│   │   │   ├── interceptors/timing.interceptor.ts  # [NUEVO] Medición de rendimiento
-│   │   │   └── utils/campaign-window.ts
-│   │   ├── companies/             # CRUD empresas (contiene generateSlug estático)
-│   │   ├── dashboard/
-│   │   │   ├── dashboard.cache.ts         # [NUEVO] Cache en memoria 30s
-│   │   │   └── dashboard.service.ts       # [MODIFICADO] Con cache
-│   │   ├── employees/             # CRUD empleados [MODIFICADO] Paginación server-side
-│   │   ├── gifts/                 # CRUD regalos + imágenes
-│   │   ├── imports/
-│   │   │   ── imports.service.ts # [MODIFICADO] Bulk employee + beneficiary optimization
-│   │   ├── prisma/prisma.service.ts
-│   │   ├── public-auth/           # Login público de empleados
-│   │   ├── public-selection/      # Selección de regalos pública
+  │   │   │   ├── config/env.ts      # Validación de variables de entorno
+  │   │   │   ├── decorators/roles.decorator.ts
+  │   │   │   ├── filters/http-exception.filter.ts
+  │   │   │   ├── guards/roles.guard.ts
+  │   │   │   ├── interceptors/timing.interceptor.ts  # [NUEVO] Medición de rendimiento
+  │   │   │   ├── services/
+  │   │   │   │   ├── email.service.ts           # [NUEVO] EmailService con Resend (OTP)
+  │   │   │   │   └── supabase-storage.service.ts
+  │   │   │   └── utils/campaign-window.ts
+  │   │   ├── companies/             # CRUD empresas (contiene generateSlug estático)
+  │   │   ├── dashboard/
+  │   │   │   ├── dashboard.cache.ts         # [NUEVO] Cache en memoria 30s
+  │   │   │   └── dashboard.service.ts       # [MODIFICADO] Con cache
+  │   │   ├── employees/             # CRUD empleados [MODIFICADO] Paginación server-side
+  │   │   ├── gifts/                 # CRUD regalos + imágenes
+  │   │   ├── imports/
+  │   │   │   ── imports.service.ts # [MODIFICADO] Bulk employee + beneficiary optimization
+  │   │   ├── prisma/prisma.service.ts
+  │   │   ├── public-auth/           # Login público de empleados [MODIFICADO] + OTP email (request-code, verify-code)
+  │   │   │   ├── dto/
+  │   │   │   │   ├── employee-login.dto.ts
+  │   │   │   │   ├── request-code.dto.ts     # [NUEVO]
+  │   │   │   │   └── verify-code.dto.ts      # [NUEVO]
+  │   │   │   ├── public-auth.controller.ts   # [MODIFICADO] +2 endpoints OTP
+  │   │   │   ├── public-auth.service.ts      # [MODIFICADO] +requestCode, +verifyCode, refactor buildLoginResponse
+  │   │   │   └── public-auth.module.ts       # [MODIFICADO] +EmailService provider
+  │   │   ├── public-selection/      # Selección de regalos pública
 │   │   ├── reports/               # Exportación Excel de selecciones
 │   │   ├── selections/            # CRUD selecciones
 │   │   ├── support-requests/      # CRUD solicitudes de soporte
@@ -88,9 +98,9 @@ mimo-regalostestv4/
 │   │   │   ├── public/
 │   │   │   │   ├── AlreadyConfirmed.jsx
 │   │   │   │   ├── BeneficiarySelection.jsx  # [MODIFICADO] Requests paralelos
-│   │   │   │   ├── CampaignWelcome.jsx
-│   │   │   │   ├── EmployeeLogin.jsx
-│   │   │   │   ├── Summary.jsx
+  │   │   │   │   ├── CampaignWelcome.jsx
+  │   │   │   │   ├── EmployeeLogin.jsx        # [MODIFICADO] Flujo OTP de 2 pasos (documentId → código)
+  │   │   │   │   ├── Summary.jsx
 │   │   │   │   ├── SupportRequest.jsx
 │   │   │   │   └── ThankYou.jsx
 │   │   │   └── NotFound.jsx
@@ -131,6 +141,20 @@ FRONTEND_URL=http://localhost:5173
 ENABLE_TIMING_LOGS=false
 ADMIN_SEED_EMAIL="admin@giftapp.com"
 ADMIN_SEED_PASSWORD="Admin123!"
+
+# Supabase Storage
+SUPABASE_URL="https://uqxvrmcxumqnllaobrlh.supabase.co"
+SUPABASE_SERVICE_ROLE_KEY="(service role key)"
+SUPABASE_STORAGE_BUCKET="gift-images"
+
+# Email OTP — Login público de empleados
+PUBLIC_LOGIN_OTP_ENABLED=true
+PUBLIC_LOGIN_OTP_EXPIRY_MINUTES=10
+PUBLIC_LOGIN_OTP_MAX_ATTEMPTS=5
+PUBLIC_LOGIN_OTP_LOCK_MINUTES=10
+PUBLIC_LOGIN_OTP_RESEND_COOLDOWN_SECONDS=60
+RESEND_API_KEY="re_h2nBeuzU_..."   # Backend only, NUNCA exponer al frontend
+EMAIL_FROM="onboarding@resend.dev" # TEMPORAL: solo envía al email del dueño de la cuenta Resend
 ```
 
 ### Frontend (.env)
@@ -290,7 +314,7 @@ cd backend
 | Role | Roles: SUPER_ADMIN, ADMIN, COMPANY_VIEWER |
 | AdminUser | Usuarios del panel admin |
 | Campaign | Campañas de regalos (con soft-delete) |
-| Employee | Empleados importados (con soft-delete) |
+| Employee | Empleados importados (con soft-delete). Campos OTP: `emailOtpHash`, `emailOtpExpiresAt`, `emailOtpSentAt`, `emailOtpLastUsedAt`, `emailOtpLockedUntil`, `emailOtpAttempts` |
 | Beneficiary | Beneficiarios de empleados (con soft-delete) |
 | Gift | Regalos disponibles (con imágenes, soft-delete) |
 | GiftImage | Imágenes de regalos |
@@ -329,7 +353,9 @@ cd backend
 
 ### Flujo Público (Empleado)
 1. Acceso por URL: `/campaign/:slug`
-2. Login con documentId → JWT público
+2. Login — dos modos según feature flag `PUBLIC_LOGIN_OTP_ENABLED`:
+   - **`false` (clásico):** Login con documentId → JWT público
+   - **`true` (OTP):** Paso 1: ingresa documentId → se envía código de 6 dígitos por email (Resend). Paso 2: ingresa código → JWT público. Respuesta idéntica al login clásico (accessToken, employee, campaign, alreadyConfirmed).
 3. Selección de regalos para cada beneficiario
 4. Confirmación de selección (decrementa stock atómicamente)
 5. Página de agradecimiento
@@ -411,55 +437,84 @@ cd backend
 | `frontend/src/api/backendApiService.js` | BUG-09: `getAdminMe()` catch solo limpia token si `err.status === 401`. Errores 400/500/network ya no eliminan un token válido. |
 | `frontend/src/pages/admin/AdminLayout.jsx` | BUG-09: Nuevo estado `sessionError`. Si `/auth/me` falla pero el token sigue en localStorage, muestra mensaje "No se pudo validar la sesión. Intenta recargar." con botón "Reintentar" en vez de redirigir a login. En 401 real, apiClient ya limpió el token y se redirige a login como antes. |
 
+### Sesión 6 de julio — Email OTP público con Resend (Phases 2-7)
+| Archivo | Cambio |
+|---------|--------|
+| `backend/prisma/schema.prisma` | +6 campos OTP en modelo Employee (emailOtpHash, emailOtpExpiresAt, emailOtpSentAt, emailOtpLastUsedAt, emailOtpLockedUntil, emailOtpAttempts) |
+| `backend/prisma/migrations/20260706111836_add_employee_email_otp_fields/migration.sql` | Nueva migración — ALTER TABLE Employee ADD COLUMN (6 campos) |
+| `backend/src/common/services/email.service.ts` | **NUEVO** — EmailService con Resend. Envía OTP por email. Key lazy-init. Nunca loguea el código. |
+| `backend/src/public-auth/public-auth.service.ts` | +`requestCode()`, +`verifyCode()`, +`buildLoginResponse()` (shared), +`generateOtpCode()` (crypto.randomInt), +`getOtpConfig()`. Refactor: `employeeLogin()` ahora delega a `buildLoginResponse()`. Anti-enumeración: respuestas genéricas. Rollback de hash si Resend falla. Lock después de 5 intentos. |
+| `backend/src/public-auth/public-auth.controller.ts` | +`POST auth/request-code`, +`POST auth/verify-code` (con @Throttle 5/min) |
+| `backend/src/public-auth/public-auth.module.ts` | +EmailService como provider |
+| `backend/src/public-auth/dto/request-code.dto.ts` | **NUEVO** — DTO con campaignSlug + documentId |
+| `backend/src/public-auth/dto/verify-code.dto.ts` | **NUEVO** — DTO con campaignSlug + documentId + code (regex `^\d{6}$`) |
+| `backend/src/campaigns/campaigns.service.ts` | `findBySlug()` ahora retorna `otpEnabled` (boolean derivado de `PUBLIC_LOGIN_OTP_ENABLED`) |
+| `backend/.env` | +7 variables: PUBLIC_LOGIN_OTP_ENABLED, EXPIRY_MINUTES, MAX_ATTEMPTS, LOCK_MINUTES, RESEND_COOLDOWN_SECONDS, RESEND_API_KEY, EMAIL_FROM |
+| `backend/.env.example` | +7 variables con documentación |
+| `backend/package.json` | +dependencia `resend` |
+| `frontend/src/api/backendApiService.js` | +`publicRequestOtpCode()`, +`publicVerifyOtpCode()` |
+| `frontend/src/api/giftAppService.js` | +`giftAppPublicRequestOtpCode()`, +`giftAppPublicVerifyOtpCode()` (backend only) |
+| `frontend/src/pages/public/EmployeeLogin.jsx` | Flujo OTP de 2 pasos condicional según `campaign.otpEnabled`. Paso 1: documentId + "Enviar código". Paso 2: input código 6 dígitos + "Continuar" + "Reenviar código" con cooldown 60s. Token storage y navegación idénticos al flujo clásico. |
+
 ---
 
 ## 9. Estado Actual de Git
 
 ```
 Branch: main
-Last commit: 3b63e1e "version terminada lista para desplegar"
+Last commit: e2e2520 "Fase1"
 
-Changes not staged (sesiones previas + sesiones 3 y 4 de julio):
-  - backend/src/campaigns/campaigns.service.ts                    (fix slug duplicado)
-  - backend/src/imports/imports.service.ts                        (bulk employee + beneficiary optimization)
-  - backend/src/prisma/prisma.service.ts                          (sin cambios funcionales)
-  - backend/src/public-selection/public-selection.service.ts       (DATA-01: fix StockMovement stale previousStock)
-  - backend/src/employees/dto/employee-query.dto.ts               (page + pageSize)
-  - backend/src/employees/employees.service.ts                    (paginación + búsqueda ampliada)
-  - backend/src/beneficiaries/dto/beneficiary-query.dto.ts        (page + pageSize)
-  - backend/src/beneficiaries/beneficiaries.service.ts            (paginación)
-  - backend/src/gifts/gifts.service.ts                            (BUG-02: fix age filter + DATA-02: fix restore stock)
-  - backend/src/selections/selections.service.ts                 (BUG-05: case-insensitive search)
-  - frontend/src/api/giftAppService.js                            (params opcionales + BUG-06 + CACHE-01/02/03)
-  - frontend/src/api/apiClient.js                                 (FE-06: err.status = 401)
-  - frontend/src/api/backendApiService.js                         (FE-06: err.status = 401 + BUG-09: solo limpiar token en 401 real)
-  - frontend/src/pages/admin/AdminLayout.jsx                      (BUG-09: estado error transitorio sin redirección a login)
-  - frontend/src/pages/admin/AdminUsers.jsx                       (BUG-01: company dropdown fix)
-  - frontend/src/pages/admin/Campaigns.jsx                        (fix preview slug + BUG-07: duplicate prevention)
-  - frontend/src/pages/admin/Selections.jsx                       (FE-05: export error toast)
-  - frontend/src/pages/admin/Employees.jsx                        (paginación server-side)
-  - frontend/src/pages/admin/BeneficiariesAdmin.jsx               (paginación server-side)
-  - frontend/src/pages/public/BeneficiarySelection.jsx            (BUG-08 + FE-06)
-  - frontend/src/pages/public/Summary.jsx                         (BUG-08 + FE-06)
-  - frontend/src/pages/public/AlreadyConfirmed.jsx                (FE-06)
-  - frontend/src/utils/validators.js                              (FE-04: empty age validation)
-  - frontend/src/styles/global.css                                (estilos de paginación)
+Changes not staged (sesiones previas + sesiones 3, 4 y 6 de julio):
+   - backend/src/campaigns/campaigns.service.ts                    (fix slug duplicado + otpEnabled en findBySlug)
+   - backend/src/imports/imports.service.ts                        (bulk employee + beneficiary optimization)
+   - backend/src/prisma/prisma.service.ts                          (sin cambios funcionales)
+   - backend/src/public-selection/public-selection.service.ts       (DATA-01: fix StockMovement stale previousStock)
+   - backend/src/employees/dto/employee-query.dto.ts               (page + pageSize)
+   - backend/src/employees/employees.service.ts                    (paginación + búsqueda ampliada)
+   - backend/src/beneficiaries/dto/beneficiary-query.dto.ts        (page + pageSize)
+   - backend/src/beneficiaries/beneficiaries.service.ts            (paginación)
+   - backend/src/gifts/gifts.service.ts                            (BUG-02: fix age filter + DATA-02: fix restore stock)
+   - backend/src/selections/selections.service.ts                 (BUG-05: case-insensitive search)
+   - backend/src/public-auth/public-auth.controller.ts             (+2 endpoints OTP)
+   - backend/src/public-auth/public-auth.service.ts                (+requestCode, +verifyCode, refactor buildLoginResponse)
+   - backend/src/public-auth/public-auth.module.ts                 (+EmailService provider)
+   - backend/prisma/schema.prisma                                  (+6 campos OTP en Employee)
+   - backend/.env.example                                          (+7 variables OTP/Resend)
+   - backend/package.json                                          (+dependencia resend)
+   - frontend/src/api/giftAppService.js                            (params opcionales + BUG-06 + CACHE-01/02/03 + funciones OTP)
+   - frontend/src/api/apiClient.js                                 (FE-06: err.status = 401)
+   - frontend/src/api/backendApiService.js                         (FE-06 + BUG-09 + funciones OTP)
+   - frontend/src/pages/admin/AdminLayout.jsx                      (BUG-09: estado error transitorio)
+   - frontend/src/pages/admin/AdminUsers.jsx                       (BUG-01: company dropdown fix)
+   - frontend/src/pages/admin/Campaigns.jsx                        (fix preview slug + BUG-07)
+   - frontend/src/pages/admin/Selections.jsx                       (FE-05: export error toast)
+   - frontend/src/pages/admin/Employees.jsx                        (paginación server-side)
+   - frontend/src/pages/admin/BeneficiariesAdmin.jsx               (paginación server-side)
+   - frontend/src/pages/public/BeneficiarySelection.jsx            (BUG-08 + FE-06)
+   - frontend/src/pages/public/Summary.jsx                         (BUG-08 + FE-06)
+   - frontend/src/pages/public/AlreadyConfirmed.jsx                (FE-06)
+   - frontend/src/pages/public/EmployeeLogin.jsx                   (flujo OTP de 2 pasos)
+   - frontend/src/utils/validators.js                              (FE-04: empty age validation)
+   - frontend/src/styles/global.css                                (estilos de paginación)
 
 Deleted (not staged):
-  - Informe_Auditoria_mimo-regalos.docx
-  - empleados-test.xlsx
-  - ~$empleados-test.xlsx
+   - Informe_Auditoria_mimo-regalos.docx
+   - empleados-test.xlsx
+   - ~$empleados-test.xlsx
 
 Untracked files:
-  - HANDOFF.md
-  - backend/.env.us-west-2-backup
-  - backend/src/common/interceptors/timing.interceptor.ts
-  - backend/src/dashboard/dashboard.cache.ts
-  - backend/test-timing.sh
-  - backend/uploads/campaign-logos/1781982821926-m3r40d.png
-  - frontend/src/utils/simpleCache.js
-  - tigo_import_500_empleados.xlsx
-  - tigo_import_500_empleados_nuevos_datos.xlsx
+   - HANDOFF.md
+   - backend/.env.us-west-2-backup
+   - backend/src/common/interceptors/timing.interceptor.ts
+   - backend/src/common/services/email.service.ts               # [NUEVO] EmailService con Resend
+   - backend/src/dashboard/dashboard.cache.ts
+   - backend/src/public-auth/dto/request-code.dto.ts            # [NUEVO]
+   - backend/src/public-auth/dto/verify-code.dto.ts             # [NUEVO]
+   - backend/test-timing.sh
+   - backend/uploads/campaign-logos/1781982821926-m3r40d.png
+   - frontend/src/utils/simpleCache.js
+   - tigo_import_500_empleados.xlsx
+   - tigo_import_500_empleados_nuevos_datos.xlsx
 ```
 
 **IMPORTANTE:** Todos los cambios desde la sesión del 17 de junio NO han sido commiteados. Se deben commitear antes de desplegar a producción.
@@ -515,7 +570,7 @@ Untracked files:
 - DEP-04: VITE_API_URL=/api relativo (requiere proxy en producción)
 - DEP-05: Bucket `campaign-logos` hardcoded, no documentado en .env.example
 - DEP-06: uploads/ commiteado en git
-- AUTH-01/02/03: Sin lockout por cuenta, sin trust proxy, documentId como única credencial
+- ~~AUTH-01/02/03: Sin lockout por cuenta, sin trust proxy, documentId como única credencial~~ → **Parcialmente resuelto (sesión 6 de julio):** OTP por email implementado con lockout de 5 intentos / 10 min, cooldown de reenvío 60s, anti-enumeración. El endpoint clásico (documentId-only) sigue funcionando para rollback.
 - BUG-03: Cancelled selection re-confirmation deadlock (latente)
 - BUG-04: CONFIRMED employees bypass campaign window al re-emitir token
 - FE-02: Token storage en localStorage (XSS)
@@ -526,10 +581,11 @@ Untracked files:
 ## 11. Próximos Pasos Sugeridos (Priorizados)
 
 ### Inmediato
-1. **Commitear todos los cambios** desde la sesión del 17 de junio (incluyendo fixes de las sesiones 3 y 4 de julio)
+1. **Commitear todos los cambios** desde la sesión del 17 de junio (incluyendo fixes de las sesiones 3, 4 y 6 de julio)
 2. **Actualizar variables de entorno en Render** con las nuevas DATABASE_URL y DIRECT_URL de us-east-1
 3. **Redeploy backend en Render** y verificar conectividad
 4. **Verificar que el frontend no tiene errores de consola**
+5. **Verificar un dominio en Resend** (resend.com/domains) y cambiar `EMAIL_FROM` de `onboarding@resend.dev` a un dominio propio (ej: `no-reply@tudominio.com`). El `onboarding@resend.dev` solo permite enviar al email del dueño de la cuenta.
 
 ### Corto plazo
 5. **Agregar paginación** a endpoints de lista restantes (gifts, selections, support-requests)
@@ -561,7 +617,7 @@ Untracked files:
 ### Largo plazo
 11. **Migrar a TanStack Query** para caching y deduplicación de requests
 12. **Virtualización de tablas** con react-window para datasets grandes
-13. **Email real** (actualmente solo SIMULATED en EmailLog)
+13. ~~**Email real** (actualmente solo SIMULATED en EmailLog)~~ → **Completado (sesión 6 de julio):** Email OTP implementado con Resend. El EmailLog de confirmación de selección sigue siendo SIMULATED (futuro: integrar Resend también ahí).
 
 ---
 
@@ -584,7 +640,9 @@ Untracked files:
 - Supabase PostgreSQL en us-east-1 (proyecto: `uqxvrmcxumqnllaobrlh`)
 - Pooler transaccional en puerto 6543 (runtime)
 - Pooler de sesión en puerto 5432 (migraciones)
-- 1 migración existente aplicada (`20260611015500_init_postgres`)
+- 2 migraciones aplicadas:
+  1. `20260611015500_init_postgres` — schema inicial
+  2. `20260706111836_add_employee_email_otp_fields` — campos OTP en Employee
 - Backup del .env anterior (us-west-2) en `backend/.env.us-west-2-backup`
 
 ---
@@ -621,9 +679,10 @@ Columnas: `campaignSlug`, `employeeDocumentId`, `employeeFullName`, `employeeEma
 - **Proyecto original:** mimo-regalostestv7/mimo-regalostestv4
 - **Versión anterior de referencia:** mimo-regalostestv4 (dentro del mismo directorio)
 - **Informe de auditoría:** `Informe_Auditoria_mimo-regalos.docx`
-- **Fecha de última sesión:** 4 de julio de 2026
-- **Sesiones previas:** 6 fases de optimización de rendimiento + migración a us-east-1 + fix slug duplicado + bulk employee/beneficiary + employees/beneficiaries pagination + auditoría completa + 14 fixes de bugs funcionales/datos/caché/frontend + BUG-09: fix de logout inesperado por errores transitorios en /api/auth/me
+- **Fecha de última sesión:** 6 de julio de 2026
+- **Sesiones previas:** 6 fases de optimización de rendimiento + migración a us-east-1 + fix slug duplicado + bulk employee/beneficiary + employees/beneficiaries pagination + auditoría completa + 14 fixes de bugs funcionales/datos/caché/frontend + BUG-09 fix logout + Email OTP público con Resend (request-code, verify-code, anti-enumeración, lockout, rollback)
 - **Supabase us-east-1:** Proyecto `uqxvrmcxumqnllaobrlh` en Virginia del Norte
+- **Resend:** API key restringida a envío de emails. Cuenta: david808pm@hotmail.com. EMAIL_FROM temporal: `onboarding@resend.dev` (solo envía al dueño de la cuenta). Para producción: verificar dominio en resend.com/domains.
 - **Empresas creadas:** Default Company, Nutresa, Coca-Cola, Tigo, EMP, Novaventa, TestCacheCompany (esta última creada durante verificación de CACHE-02)
 - **Campañas activas:** `tigo-2026` (Tigo), `emp-navidad` (EMP), `coca-cola-mundial-2026` (Coca-Cola), `novaventa-premios` (Novaventa)
 
@@ -828,3 +887,153 @@ Más StockMovement CORRECTION cuando stock cambia explícitamente.
 
 ### Datos de prueba creados
 - **TestCacheCompany:** Empresa creada durante verificación de CACHE-02. Puede eliminarse via admin UI si se desea.
+
+---
+
+## 19. Sesión 6 de julio — Email OTP Público con Resend
+
+Se implementó el login de empleados públicos por código OTP (one-time password) enviado por email usando Resend. El endpoint clásico de documentId-only se mantiene sin cambios para rollback.
+
+### Feature flag
+`PUBLIC_LOGIN_OTP_ENABLED` controla todo:
+- `false`: frontend usa flujo clásico (documentId → JWT). Endpoints OTP retornan 403.
+- `true`: frontend usa flujo OTP (documentId → código email → JWT). Endpoint clásico sigue funcionando.
+
+El campo `otpEnabled` (boolean) se añadió a la respuesta de `GET /api/public/campaigns/:slug` para que el frontend detecte el modo sin exponer secrets.
+
+### Endpoints nuevos
+
+| Método | Path | Descripción |
+|--------|------|-------------|
+| POST | `/api/public/auth/request-code` | Genera OTP de 6 dígitos, hashea con bcrypt, envía por email via Resend |
+| POST | `/api/public/auth/verify-code` | Verifica el código, retorna misma response shape que `employee-login` |
+
+**Payload request-code:** `{ campaignSlug, documentId }`
+**Payload verify-code:** `{ campaignSlug, documentId, code }`
+
+Ambos con `@Throttle({ default: { ttl: 60000, limit: 5 } })` (5 req/min por IP).
+
+### Anti-enumeración
+- **request-code** siempre retorna 200 con mensaje genérico: `"Si los datos son válidos, enviaremos un código al correo registrado."` — sin importar si el empleado existe, está bloqueado, o no tiene email.
+- **verify-code** retorna 400 con `"El código es inválido o ha expirado."` para cualquier fallo (código incorrecto, expirado, sin hash, empleado no existe).
+- Lock después de 5 intentos: `"Has excedido el número de intentos permitidos. Intenta nuevamente en unos minutos."`
+
+### Seguridad
+- OTP se genera con `crypto.randomInt` (criptográficamente seguro)
+- OTP se hashea con bcrypt antes de guardar (nunca se almacena plain)
+- OTP **nunca** se loguea (ningún `console.log`/`Logger` incluye el código)
+- `RESEND_API_KEY` solo en backend `.env` (gitignored). Nunca se expone al frontend.
+- No existe `VITE_RESEND_API_KEY` en ningún archivo del proyecto.
+- Cooldown de reenvío: 60 segundos (configurable)
+- Lock: 5 intentos fallidos → 10 minutos de bloqueo (configurable)
+- Expiración: 10 minutos (configurable)
+- Si Resend falla después de guardar el hash: se hace rollback (hash, expiresAt, sentAt, attempts, lockedUntil → null/0) y se retorna 503 controlado: `"No fue posible enviar el código. Intenta nuevamente en unos minutos."`
+
+### Response shape de verify-code (idéntica a employee-login)
+```json
+// Empleado PENDING/IN_PROGRESS:
+{
+  "accessToken": "eyJ...",
+  "employee": { "id": 101, "fullName": "...", "documentId": "...", "status": "IN_PROGRESS" },
+  "campaign": { "id": 1, "name": "...", "slug": "...", "logoText": "...", "primaryColor": "..." }
+}
+
+// Empleado CONFIRMED:
+{
+  "alreadyConfirmed": true,
+  "accessToken": "eyJ...",
+  "employee": { "id": 109, "fullName": "...", "documentId": "...", "status": "CONFIRMED" },
+  "campaign": { "id": 1, "name": "...", "slug": "...", "logoText": "...", "primaryColor": "..." }
+}
+```
+
+### Email template
+- **Subject:** `"Tu código de acceso para seleccionar tu regalo"`
+- **Contenido:** Nombre del empleado, nombre de la campaña, URL de la campaña, código de 6 dígitos (grande, con letter-spacing), fecha de expiración, mensaje `"Si no solicitaste este código, puedes ignorar este correo."`
+- HTML profesional con inline styles, HTML-escaped para prevenir inyección.
+
+### Refactor del endpoint clásico
+`employeeLogin()` ahora delega a `buildLoginResponse(employee, campaign)` — método privado compartido con `verifyCode()`. Esto garantiza que la response shape sea idéntica. La lógica (BLOCKED check, CONFIRMED check, window check, beneficiary check, PENDING→IN_PROGRESS, issue token) no cambió — solo se movió a un método compartido.
+
+### Frontend — EmployeeLogin.jsx
+- Si `campaign.otpEnabled === true`: flujo de 2 pasos.
+  - Paso 1: input documentId + botón "Enviar código". On success: mensaje "Revisa tu correo electrónico..." + avanza al paso 2.
+  - Paso 2: input código 6 dígitos + botón "Continuar" + botón "Reenviar código" (con cooldown 60s client-side). Botón "Volver" al paso 1.
+- Si `campaign.otpEnabled !== true`: flujo clásico (documentId + "Continuar").
+- Token storage, sessionStorage y navegación idénticos en ambos modos.
+
+### Migración
+`20260706111836_add_employee_email_otp_fields` — ALTER TABLE Employee ADD COLUMN:
+- `emailOtpHash` VARCHAR(255) nullable
+- `emailOtpExpiresAt` TIMESTAMP nullable
+- `emailOtpSentAt` TIMESTAMP nullable
+- `emailOtpLastUsedAt` TIMESTAMP nullable
+- `emailOtpLockedUntil` TIMESTAMP nullable
+- `emailOtpAttempts` INTEGER NOT NULL DEFAULT 0
+
+No se modificaron constraints, relaciones ni otros modelos.
+
+### Variables de entorno añadidas
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `PUBLIC_LOGIN_OTP_ENABLED` | `false` | Feature flag principal |
+| `PUBLIC_LOGIN_OTP_EXPIRY_MINUTES` | `10` | Tiempo de vida del OTP |
+| `PUBLIC_LOGIN_OTP_MAX_ATTEMPTS` | `5` | Intentos fallidos antes de lock |
+| `PUBLIC_LOGIN_OTP_LOCK_MINUTES` | `10` | Duración del lock |
+| `PUBLIC_LOGIN_OTP_RESEND_COOLDOWN_SECONDS` | `60` | Cooldown entre envíos |
+| `RESEND_API_KEY` | — | API key de Resend (backend only) |
+| `EMAIL_FROM` | `no-reply@giftapp.local` | Remitente del email |
+
+### Pruebas realizadas (6 de julio)
+
+**Feature flag OFF:**
+| Test | Resultado |
+|------|----------|
+| Campaign response incluye `otpEnabled: false` | ✅ |
+| Login clásico (documentId-only) funciona | ✅ |
+| Endpoints OTP retornan 403 | ✅ |
+
+**Feature flag ON (con dummy key — Resend falla):**
+| Test | Resultado |
+|------|----------|
+| Campaign response incluye `otpEnabled: true` | ✅ |
+| Request-code válido → 503 controlado + rollback de hash | ✅ |
+| Wrong documentId → 200 genérico (sin enumeración) | ✅ |
+| Invalid code format → 400 validación DTO | ✅ |
+| Verify sin OTP generado → 400 genérico | ✅ |
+| Wrong code → 400 genérico + attempt increment | ✅ |
+| 5 intentos fallidos → lock (emailOtpAttempts=5, lockedUntil set) | ✅ |
+| Old endpoint funciona alongside new (rollback) | ✅ |
+
+**Feature flag ON (con Resend key real — email llega):**
+| Test | Resultado |
+|------|----------|
+| Request-code válido → 200 genérico + email enviado via Resend | ✅ |
+| Email recibido en david808pm@hotmail.com con código 6 dígitos | ✅ |
+| Verify-code con código correcto → 200 + accessToken + employee + campaign | ✅ |
+| PENDING → IN_PROGRESS | ✅ |
+| OTP fields cleared after verify (hash=null, attempts=0, lastUsedAt set) | ✅ |
+| CONFIRMED employee verifica código → alreadyConfirmed: true + accessToken | ✅ |
+
+### Configuración de Resend
+- **API key:** Restringida a solo envío de emails (no puede listar/crear dominios)
+- **Cuenta:** david808pm@hotmail.com
+- **EMAIL_FROM actual:** `onboarding@resend.dev` — **TEMPORAL**, solo envía al email del dueño de la cuenta
+- **Para producción:** Verificar un dominio en resend.com/domains y cambiar `EMAIL_FROM` a `no-reply@tudominio.com`
+
+### Áreas protegidas confirmadas como no modificadas
+- Stock logic (updateMany guard)
+- Selection confirmation transaction
+- Public selection behavior after login (mismo JWT, mismo buildLoginResponse)
+- Excel import/export
+- Logistics export
+- Company scoping
+- Roles/permissions
+- Supabase Storage
+- Route paths (AppRoutes.jsx no modificado)
+- UI design (mismo layout, estilos, responsive)
+- localStorageService
+- DIRECT_URL/directClient strategy
+- JWT payloads (mismo issueToken, mismo public JWT payload)
+- Migrations existentes (solo se añadió una nueva, no se modificaron las existentes)
+- Constraints y relationships (no se tocaron)

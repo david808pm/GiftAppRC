@@ -4,6 +4,7 @@ import { PassportModule } from '@nestjs/passport';
 import { PublicAuthService } from './public-auth.service';
 import { PublicAuthController } from './public-auth.controller';
 import { PublicEmployeeJwtStrategy } from './strategies/public-employee-jwt.strategy';
+import { EmailService } from '../common/services/email.service';
 import { requireEnv, optionalEnv, MIN_SECRET_LENGTH } from '../common/config/env';
 
 @Module({
@@ -15,7 +16,7 @@ import { requireEnv, optionalEnv, MIN_SECRET_LENGTH } from '../common/config/env
     }),
   ],
   controllers: [PublicAuthController],
-  providers: [PublicAuthService, PublicEmployeeJwtStrategy],
+  providers: [PublicAuthService, PublicEmployeeJwtStrategy, EmailService],
   exports: [PublicAuthService],
 })
 export class PublicAuthModule {}
