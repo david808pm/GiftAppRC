@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import {
   validateRequired,
@@ -12,6 +12,10 @@ import {
   giftAppDeleteGift,
   giftAppGetCampaigns,
   giftAppUploadGiftImage,
+  giftAppDeleteGiftImage,
+  giftAppDeleteAllGiftImages,
+  giftAppSetPrimaryGiftImage,
+  giftAppReplaceGiftImage,
   USE_BACKEND,
 } from '../../api/giftAppService';
 import Modal from '../../components/Modal';
@@ -54,10 +58,15 @@ export default function Gifts() {
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [selectedImage, setSelectedImage] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
+  const [selectedImages, setSelectedImages] = useState([]);
+  const [imagePreviews, setImagePreviews] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [imageError, setImageError] = useState('');
+  const [imageDeleteTarget, setImageDeleteTarget] = useState(null);
+  const [imageDeleteAllConfirm, setImageDeleteAllConfirm] = useState(false);
+  const [replacingImageId, setReplacingImageId] = useState(null);
+  const [imageActionLoading, setImageActionLoading] = useState(false);
+  const replaceFileInputRef = useRef(null);
 
   const loadData = async () => {
     if (USE_BACKEND) {
@@ -102,8 +111,8 @@ export default function Gifts() {
     setEditing(null);
     setForm({ ...EMPTY_GIFT, campaignId: campaigns[0]?.id || '' });
     setErrors({});
-    setSelectedImage(null);
-    setImagePreview(null);
+    setSelectedImages([]);
+    setImagePreviews([]);
     setImageError('');
     setShowModal(true);
   };
@@ -118,8 +127,8 @@ export default function Gifts() {
       imageUrls: (gift.imageUrls || []).join(', '),
     });
     setErrors({});
-    setSelectedImage(null);
-    setImagePreview(null);
+    setSelectedImages([]);
+    setImagePreviews([]);
     setImageError('');
     setShowModal(true);
   };
@@ -148,11 +157,15 @@ export default function Gifts() {
       stock: Number(form.stock),
       minAge: Number(form.minAge),
       maxAge: Number(form.maxAge),
-      imageUrls: form.imageUrls
-        .split(',')
-        .map((u) => u.trim())
-        .filter(Boolean),
     };
+
+    if (!editing) {
+      giftData.imageUrls = form.imageUrls
+        ? form.imageUrls.split(',').map((u) => u.trim()).filter(Boolean)
+        : [];
+    } else {
+      delete giftData.imageUrls;
+    }
 
     setSaving(true);
     try {
@@ -165,11 +178,11 @@ export default function Gifts() {
         giftId = created.id;
       }
 
-      // Upload image if a file was selected
-      if (selectedImage && USE_BACKEND) {
+      // Upload images if files were selected
+      if (selectedImages.length > 0 && USE_BACKEND) {
         setUploading(true);
         try {
-          await giftAppUploadGiftImage(giftId, selectedImage);
+          await giftAppUploadGiftImage(giftId, selectedImages);
         } catch (uploadErr) {
           addToast(
             'Regalo guardado, pero no se pudo subir la imagen: ' +
@@ -218,36 +231,156 @@ export default function Gifts() {
   };
 
   const handleImageSelect = (e) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files || []);
     setImageError('');
 
-    if (!file) {
-      setSelectedImage(null);
-      setImagePreview(null);
+    if (files.length === 0) {
+      return;
+    }
+
+    const existingCount = editing ? (editing.imageUrls?.length || 0) : 0;
+    const maxAllowed = 3 - existingCount;
+
+    if (existingCount >= 3) {
+      setImageError('Un regalo puede tener máximo 3 imágenes.');
+      e.target.value = '';
+      return;
+    }
+
+    if (files.length > maxAllowed) {
+      setImageError(
+        `Solo puedes agregar ${maxAllowed} imagen(es) más. Ya tienes ${existingCount}.`,
+      );
+      e.target.value = '';
+      return;
+    }
+
+    for (const file of files) {
+      if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+        setImageError('Tipo de archivo no permitido. Use: JPEG, PNG o WebP.');
+        e.target.value = '';
+        return;
+      }
+      if (file.size > MAX_IMAGE_SIZE) {
+        setImageError('El archivo excede el tamaño máximo de 2MB.');
+        e.target.value = '';
+        return;
+      }
+    }
+
+    setSelectedImages(files);
+
+    const newPreviews = [];
+    let loaded = 0;
+    files.forEach((file, i) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        newPreviews[i] = ev.target.result;
+        loaded++;
+        if (loaded === files.length) {
+          setImagePreviews([...newPreviews]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const reloadGift = async (giftId) => {
+    clearCache('gifts_all');
+    const allGifts = await giftAppGetGifts();
+    setGifts(allGifts);
+    const updated = allGifts.find((g) => g.id === giftId);
+    if (updated) {
+      setEditing({
+        ...updated,
+        stock: String(updated.stock),
+        minAge: String(updated.minAge),
+        maxAge: String(updated.maxAge),
+      });
+    }
+  };
+
+  const handleDeleteSingleImage = async () => {
+    if (!imageDeleteTarget || !editing) return;
+    setImageActionLoading(true);
+    try {
+      await giftAppDeleteGiftImage(editing.id, imageDeleteTarget.id);
+      setImageDeleteTarget(null);
+      await reloadGift(editing.id);
+      addToast('Imagen eliminada.');
+    } catch (err) {
+      addToast(err.message || 'Error al eliminar la imagen.', 'error');
+    } finally {
+      setImageActionLoading(false);
+    }
+  };
+
+  const handleDeleteAllImages = async () => {
+    if (!editing) return;
+    setImageActionLoading(true);
+    try {
+      await giftAppDeleteAllGiftImages(editing.id);
+      setImageDeleteAllConfirm(false);
+      await reloadGift(editing.id);
+      addToast('Todas las imágenes fueron eliminadas.');
+    } catch (err) {
+      addToast(err.message || 'Error al eliminar las imágenes.', 'error');
+    } finally {
+      setImageActionLoading(false);
+    }
+  };
+
+  const handleSetPrimaryImage = async (imageId) => {
+    if (!editing) return;
+    setImageActionLoading(true);
+    try {
+      await giftAppSetPrimaryGiftImage(editing.id, imageId);
+      await reloadGift(editing.id);
+      addToast('Imagen principal actualizada.');
+    } catch (err) {
+      addToast(err.message || 'Error al cambiar la imagen principal.', 'error');
+    } finally {
+      setImageActionLoading(false);
+    }
+  };
+
+  const handleReplaceImageClick = (imageId) => {
+    setReplacingImageId(imageId);
+    replaceFileInputRef.current?.click();
+  };
+
+  const handleReplaceImageFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !replacingImageId || !editing) {
+      setReplacingImageId(null);
       return;
     }
 
     if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
-      setImageError('Tipo de archivo no permitido. Use: JPEG, PNG o WebP.');
-      setSelectedImage(null);
-      setImagePreview(null);
+      addToast('Tipo de archivo no permitido. Use: JPEG, PNG o WebP.', 'error');
+      setReplacingImageId(null);
       e.target.value = '';
       return;
     }
-
     if (file.size > MAX_IMAGE_SIZE) {
-      setImageError('El archivo excede el tamaño máximo de 2MB.');
-      setSelectedImage(null);
-      setImagePreview(null);
+      addToast('El archivo excede el tamaño máximo de 2MB.', 'error');
+      setReplacingImageId(null);
       e.target.value = '';
       return;
     }
 
-    setSelectedImage(file);
-
-    const reader = new FileReader();
-    reader.onload = (ev) => setImagePreview(ev.target.result);
-    reader.readAsDataURL(file);
+    setImageActionLoading(true);
+    try {
+      await giftAppReplaceGiftImage(editing.id, replacingImageId, file);
+      setReplacingImageId(null);
+      e.target.value = '';
+      await reloadGift(editing.id);
+      addToast('Imagen reemplazada.');
+    } catch (err) {
+      addToast(err.message || 'Error al reemplazar la imagen.', 'error');
+    } finally {
+      setImageActionLoading(false);
+    }
   };
 
   if (USE_BACKEND && loading) {
@@ -507,46 +640,231 @@ export default function Gifts() {
             <option value="INACTIVE">Inactivo</option>
           </select>
         </div>
-        <div className="form-group">
-          <label>Subir Imagen desde Computador</label>
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            onChange={handleImageSelect}
-            disabled={saving || uploading}
-          />
-          {selectedImage && (
-            <div style={{ marginTop: 8, fontSize: '0.8125rem', color: 'var(--gray-600)' }}>
-              <span>{selectedImage.name}</span>
-              {' — '}
-              <span>{(selectedImage.size / 1024).toFixed(1)} KB</span>
-            </div>
-          )}
-          {imageError && <p className="form-error">{imageError}</p>}
-          {imagePreview && (
-            <div style={{ marginTop: 8 }}>
-              <img
-                src={imagePreview}
-                alt="Previsualización"
-                style={{
-                  maxWidth: 200,
-                  maxHeight: 200,
-                  objectFit: 'contain',
-                  borderRadius: 6,
-                  border: '1px solid var(--gray-200)',
-                }}
+        {/* ── Image Manager (edit mode only) ── */}
+        {editing ? (
+          <div className="form-group">
+            <label>
+              Imágenes del regalo ({editing.imageUrls?.length || 0} de 3)
+            </label>
+
+            {/* Current images grid */}
+            {editing.imageUrls?.length > 0 ? (
+              <div className="image-manager-grid">
+                {editing.imageUrls.map((url, idx) => {
+                  const imgId = editing.images?.[idx]?.id || idx;
+                  const isPrimary = editing.images?.[idx]?.isPrimary || idx === 0;
+                  return (
+                    <div key={idx} className={`image-manager-card${isPrimary ? ' image-manager-card--primary' : ''}`}>
+                      <div className="image-manager-thumb">
+                        <img
+                          src={url}
+                          alt={`Imagen ${idx + 1}`}
+                          onError={(e) => {
+                            e.target.src = 'https://placehold.co/120x120/CCCCCC/666?text=Error';
+                          }}
+                        />
+                        {isPrimary && (
+                          <span className="image-manager-primary-badge">Principal</span>
+                        )}
+                      </div>
+                      <div className="image-manager-actions">
+                        {!isPrimary && (
+                          <button
+                            className="btn btn-outline btn-sm"
+                            onClick={() => handleSetPrimaryImage(imgId)}
+                            disabled={imageActionLoading}
+                            title="Marcar como principal"
+                          >
+                            Principal
+                          </button>
+                        )}
+                        <button
+                          className="btn btn-outline btn-sm"
+                          onClick={() => handleReplaceImageClick(imgId)}
+                          disabled={imageActionLoading}
+                          title="Reemplazar imagen"
+                        >
+                          Reemplazar
+                        </button>
+                        <button
+                          className="btn btn-danger btn-sm"
+                          onClick={() => setImageDeleteTarget({ id: imgId, imageUrl: url })}
+                          disabled={imageActionLoading}
+                          title="Eliminar imagen"
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p style={{ color: 'var(--gray-500)', fontSize: '0.875rem', marginTop: 4 }}>
+                Este regalo no tiene imágenes.
+              </p>
+            )}
+
+            {/* Delete all button */}
+            {editing.imageUrls?.length > 0 && (
+              <button
+                className="btn btn-danger btn-sm"
+                onClick={() => setImageDeleteAllConfirm(true)}
+                disabled={imageActionLoading}
+                style={{ marginTop: 12 }}
+              >
+                Eliminar todas las imágenes
+              </button>
+            )}
+
+            {/* Add images button (when < 3) */}
+            {editing.imageUrls?.length < 3 && (
+              <div style={{ marginTop: 12 }}>
+                <label style={{ fontSize: '0.875rem', color: 'var(--gray-600)', marginBottom: 4, display: 'block' }}>
+                  Agregar {3 - editing.imageUrls.length} imagen(es) más
+                </label>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={handleImageSelect}
+                  disabled={saving || uploading || imageActionLoading}
+                />
+                {selectedImages.length > 0 && (
+                  <div style={{ marginTop: 8 }}>
+                    {selectedImages.map((file, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 12,
+                          fontSize: '0.8125rem',
+                          color: 'var(--gray-600)',
+                          marginBottom: 8,
+                        }}
+                      >
+                        {imagePreviews[i] ? (
+                          <img
+                            src={imagePreviews[i]}
+                            alt={file.name}
+                            style={{
+                              width: 60,
+                              height: 60,
+                              objectFit: 'cover',
+                              borderRadius: 6,
+                              border: '1px solid var(--gray-200)',
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: 60,
+                              height: 60,
+                              borderRadius: 6,
+                              border: '1px solid var(--gray-200)',
+                              background: 'var(--gray-100)',
+                            }}
+                          />
+                        )}
+                        <div>
+                          <div style={{ fontWeight: 500, wordBreak: 'break-all' }}>
+                            {file.name}
+                          </div>
+                          <div>{(file.size / 1024).toFixed(1)} KB</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {imageError && <p className="form-error">{imageError}</p>}
+          </div>
+        ) : (
+          <>
+            {/* ── Create mode: simple file upload ── */}
+            <div className="form-group">
+              <label>Subir Imagen desde Computador (máx 3)</label>
+              <input
+                type="file"
+                multiple
+                accept="image/jpeg,image/png,image/webp"
+                onChange={handleImageSelect}
+                disabled={saving || uploading}
               />
+              {selectedImages.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  {selectedImages.map((file, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                        fontSize: '0.8125rem',
+                        color: 'var(--gray-600)',
+                        marginBottom: 8,
+                      }}
+                    >
+                      {imagePreviews[i] ? (
+                        <img
+                          src={imagePreviews[i]}
+                          alt={file.name}
+                          style={{
+                            width: 60,
+                            height: 60,
+                            objectFit: 'cover',
+                            borderRadius: 6,
+                            border: '1px solid var(--gray-200)',
+                          }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            width: 60,
+                            height: 60,
+                            borderRadius: 6,
+                            border: '1px solid var(--gray-200)',
+                            background: 'var(--gray-100)',
+                          }}
+                        />
+                      )}
+                      <div>
+                        <div style={{ fontWeight: 500, wordBreak: 'break-all' }}>
+                          {file.name}
+                        </div>
+                        <div>{(file.size / 1024).toFixed(1)} KB</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {imageError && <p className="form-error">{imageError}</p>}
             </div>
-          )}
-        </div>
-        <div className="form-group">
-          <label>O URLs de Imágenes Externas (separadas por coma)</label>
-          <textarea
-            value={form.imageUrls}
-            onChange={(e) => updateField('imageUrls', e.target.value)}
-            placeholder="https://ejemplo.com/imagen1.jpg, https://ejemplo.com/imagen2.jpg"
-          />
-        </div>
+          </>
+        )}
+
+        {/* External URLs textarea — informational in edit, editable in create */}
+        {!editing && (
+          <div className="form-group">
+            <label>O URLs de Imágenes Externas (separadas por coma)</label>
+            <textarea
+              value={form.imageUrls}
+              onChange={(e) => updateField('imageUrls', e.target.value)}
+              placeholder="https://ejemplo.com/imagen1.jpg, https://ejemplo.com/imagen2.jpg"
+            />
+          </div>
+        )}
+
+        {/* Hidden file input for replace operations */}
+        <input
+          ref={replaceFileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          style={{ display: 'none' }}
+          onChange={handleReplaceImageFile}
+        />
       </Modal>
 
       <ConfirmDialog
@@ -559,6 +877,29 @@ export default function Gifts() {
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}
       />
+
+      <ConfirmDialog
+        isOpen={!!imageDeleteTarget}
+        title="Eliminar Imagen"
+        message="¿Estás seguro de que deseas eliminar esta imagen?"
+        confirmText="Eliminar"
+        danger
+        loading={imageActionLoading}
+        onConfirm={handleDeleteSingleImage}
+        onCancel={() => setImageDeleteTarget(null)}
+      />
+
+      <ConfirmDialog
+        isOpen={imageDeleteAllConfirm}
+        title="Eliminar Todas las Imágenes"
+        message="¿Estás seguro de que deseas eliminar TODAS las imágenes de este regalo? Esta acción no se puede deshacer."
+        confirmText="Eliminar todas"
+        danger
+        loading={imageActionLoading}
+        onConfirm={handleDeleteAllImages}
+        onCancel={() => setImageDeleteAllConfirm(false)}
+      />
+
       <Toast toasts={toasts} onRemove={removeToast} />
     </div>
   );

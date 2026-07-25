@@ -1295,3 +1295,71 @@ textarea:focus-visible,
   border-color: var(--primary);
   box-shadow: 0 0 0 2px var(--primary-light);
 }
+
+/* ── Image Manager ──────────────────────────────────────── */
+
+.image-manager-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.image-manager-card {
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.image-manager-card:hover {
+  border-color: var(--gray-300);
+}
+
+.image-manager-card--primary {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-light);
+}
+
+.image-manager-thumb {
+  position: relative;
+  aspect-ratio: 1;
+  background: var(--gray-100);
+  overflow: hidden;
+}
+
+.image-manager-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.image-manager-primary-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  background: var(--primary);
+  color: white;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.025em;
+}
+
+.image-manager-actions {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  flex-wrap: wrap;
+}
+
+.image-manager-actions .btn-sm {
+  font-size: 0.6875rem;
+  padding: 3px 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: center;
+}

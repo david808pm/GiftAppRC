@@ -3,13 +3,16 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   ParseIntPipe,
+  Req,
   UseGuards,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { AdminUsersService } from './admin-users.service';
 import { CreateAdminUserDto } from './dto/create-admin-user.dto';
 import { UpdateAdminUserDto } from './dto/update-admin-user.dto';
@@ -64,5 +67,15 @@ export class AdminUsersController {
     @Body() dto: UpdateStatusDto,
   ) {
     return this.adminUsersService.updateStatus(id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  remove(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: Request,
+  ) {
+    const authenticatedUser = req.user as { userId: number };
+    return this.adminUsersService.remove(id, authenticatedUser.userId);
   }
 }

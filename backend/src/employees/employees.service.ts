@@ -9,7 +9,55 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { EmployeeQueryDto } from './dto/employee-query.dto';
-import { Prisma } from '@prisma/client';
+import { Prisma, EmployeeStatus } from '@prisma/client';
+import * as ExcelJS from 'exceljs';
+
+function sanitizeExcelCell(value: unknown): string {
+  const str = String(value ?? '');
+  if (['=', '+', '-', '@'].includes(str.charAt(0))) {
+    return `'${str}`;
+  }
+  return str;
+}
+
+function translateEmployeeStatus(status: string): string {
+  if (status === 'PENDING') return 'Pendiente';
+  if (status === 'IN_PROGRESS') return 'En progreso';
+  if (status === 'CONFIRMED') return 'Confirmado';
+  return status;
+}
+
+function formatDateCO(iso: string | Date): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('es-CO', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Bogota',
+  });
+}
+
+function styleHeader(ws: ExcelJS.Worksheet, colCount: number) {
+  const headerRow = ws.getRow(1);
+  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+  headerRow.fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FF1E3A5F' },
+  };
+  headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  headerRow.height = 28;
+
+  ws.views = [{ state: 'frozen', ySplit: 1 }];
+  ws.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: colCount },
+  };
+}
 
 @Injectable()
 export class EmployeesService {
@@ -97,6 +145,127 @@ export class EmployeesService {
       include: baseInclude,
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  // ── Admin: export xlsx ───────────────────────────────────
+
+  async exportXlsx(
+    query: { search?: string; campaignId?: number; status?: string },
+    user?: { role: string; companyId?: number },
+  ): Promise<Buffer> {
+    const VALID_STATUSES: EmployeeStatus[] = ['PENDING', 'IN_PROGRESS', 'CONFIRMED'];
+
+    if (query.status && !VALID_STATUSES.includes(query.status as EmployeeStatus)) {
+      throw new BadRequestException(
+        `Estado de exportación no permitido. Valores permitidos: ${VALID_STATUSES.join(', ')}.`,
+      );
+    }
+
+    const campaignWhere: Prisma.CampaignWhereInput = { deletedAt: null };
+
+    if (user?.role === 'COMPANY_VIEWER') {
+      if (!user.companyId) {
+        throw new ForbiddenException('No tienes compañía asignada.');
+      }
+      campaignWhere.companyId = user.companyId;
+    }
+
+    const where: Prisma.EmployeeWhereInput = {
+      deletedAt: null,
+      campaign: campaignWhere,
+    };
+
+    if (query.status) {
+      where.status = query.status as EmployeeStatus;
+    } else {
+      where.status = { in: VALID_STATUSES };
+    }
+
+    if (query.campaignId !== undefined) {
+      where.campaignId = query.campaignId;
+    }
+
+    if (query.search) {
+      where.OR = [
+        { fullName: { contains: query.search, mode: 'insensitive' } },
+        { documentId: { contains: query.search, mode: 'insensitive' } },
+        { email: { contains: query.search, mode: 'insensitive' } },
+        { phone: { contains: query.search, mode: 'insensitive' } },
+        { shippingCity: { contains: query.search, mode: 'insensitive' } },
+        { shippingAddress: { contains: query.search, mode: 'insensitive' } },
+      ];
+    }
+
+    const employees = await this.prisma.employee.findMany({
+      where,
+      select: {
+        fullName: true,
+        documentId: true,
+        email: true,
+        phone: true,
+        shippingAddress: true,
+        shippingCity: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        campaign: {
+          select: {
+            name: true,
+            slug: true,
+            company: { select: { name: true } },
+          },
+        },
+        _count: { select: { beneficiaries: true } },
+      },
+      orderBy: [
+        { campaign: { company: { name: 'asc' } } },
+        { campaign: { name: 'asc' } },
+        { fullName: 'asc' },
+        { documentId: 'asc' },
+      ],
+    });
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'GiftApp';
+
+    const ws = wb.addWorksheet('Empleados');
+    ws.columns = [
+      { header: 'Empresa', key: 'company', width: 22 },
+      { header: 'Campaña', key: 'campaign', width: 22 },
+      { header: 'Slug de campaña', key: 'campaignSlug', width: 22 },
+      { header: 'Documento', key: 'docId', width: 18 },
+      { header: 'Nombre completo', key: 'fullName', width: 28 },
+      { header: 'Correo electrónico', key: 'email', width: 28 },
+      { header: 'Teléfono', key: 'phone', width: 16 },
+      { header: 'Dirección de entrega', key: 'address', width: 30 },
+      { header: 'Ciudad', key: 'city', width: 18 },
+      { header: 'Estado', key: 'status', width: 16 },
+      { header: 'Cantidad de beneficiarios', key: 'beneficiaryCount', width: 20 },
+      { header: 'Fecha de creación', key: 'createdAt', width: 22 },
+      { header: 'Fecha de última actualización', key: 'updatedAt', width: 22 },
+    ];
+
+    for (const emp of employees) {
+      ws.addRow({
+        company: sanitizeExcelCell(emp.campaign?.company?.name ?? ''),
+        campaign: sanitizeExcelCell(emp.campaign?.name ?? ''),
+        campaignSlug: sanitizeExcelCell(emp.campaign?.slug ?? ''),
+        docId: sanitizeExcelCell(emp.documentId),
+        fullName: sanitizeExcelCell(emp.fullName),
+        email: sanitizeExcelCell(emp.email ?? ''),
+        phone: sanitizeExcelCell(emp.phone ?? ''),
+        address: sanitizeExcelCell(emp.shippingAddress ?? ''),
+        city: sanitizeExcelCell(emp.shippingCity ?? ''),
+        status: translateEmployeeStatus(emp.status),
+        beneficiaryCount: emp._count?.beneficiaries ?? 0,
+        createdAt: formatDateCO(emp.createdAt),
+        updatedAt: formatDateCO(emp.updatedAt),
+      });
+    }
+
+    styleHeader(ws, 13);
+
+    return (await wb.xlsx.writeBuffer()) as unknown as Buffer;
   }
 
   // ── Admin: get by id ─────────────────────────────────────

@@ -158,5 +158,6 @@ export const apiClient = {
   patch: (path, body) => request('PATCH', path, body),
   delete: (path) => request('DELETE', path),
   upload: (path, formData) => uploadRequest('POST', path, formData),
+  uploadPut: (path, formData) => uploadRequest('PUT', path, formData),
   downloadBlob: (path, queryParams = {}) => downloadBlobRequest('GET', path, queryParams),
 };

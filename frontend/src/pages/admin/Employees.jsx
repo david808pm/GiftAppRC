@@ -9,6 +9,7 @@ import {
   giftAppDeleteEmployee,
   giftAppGetCampaigns,
   giftAppImportEmployeesBeneficiaries,
+  giftAppDownloadEmployeesExcel,
   USE_BACKEND,
 } from '../../api/giftAppService';
 import Modal from '../../components/Modal';
@@ -59,6 +60,7 @@ export default function Employees() {
   const [importError, setImportError] = useState(null);
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [consentError, setConsentError] = useState('');
+  const [exporting, setExporting] = useState(false);
 
   const loadData = useCallback(async (opts = {}) => {
     if (USE_BACKEND) setLoading(true);
@@ -105,6 +107,32 @@ export default function Employees() {
   const handleFilterStatusChange = (value) => {
     setFilterStatus(value);
     setPage(1);
+  };
+
+  const handleExport = async () => {
+    if (!USE_BACKEND) return;
+    if (filterStatus === 'BLOCKED') {
+      addToast('El estado "Bloqueado" no está disponible para exportación. Selecciona Pendiente, En progreso o Confirmado.', 'error');
+      return;
+    }
+    const params = {};
+    if (search) params.search = search;
+    if (filterCampaign) params.campaignId = filterCampaign;
+    if (filterStatus) params.status = filterStatus;
+    setExporting(true);
+    try {
+      const blob = await giftAppDownloadEmployeesExcel(params);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `empleados_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      addToast(err.message || 'No fue posible exportar los empleados.', 'error');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handlePageSizeChange = (newSize) => {
@@ -298,27 +326,38 @@ export default function Employees() {
     <div>
       <div className="admin-topbar">
         <h1>Empleados</h1>
-        {!isReadOnly && (
-          <div style={{ display: 'flex', gap: 8 }}>
-            {USE_BACKEND ? (
-              <button className="btn btn-outline btn-sm" onClick={openImportModal}>
-                Importar Excel
-              </button>
-            ) : (
-              <button
-                className="btn btn-outline btn-sm"
-                disabled
-                title="La importación desde Excel solo está disponible en modo backend."
-                style={{ cursor: 'not-allowed', opacity: 0.6 }}
-              >
-                Importar Excel
-              </button>
-            )}
-            <button type="button" className="btn btn-primary btn-sm" onClick={openCreate}>
-              + Nuevo Empleado
+        <div style={{ display: 'flex', gap: 8 }}>
+          {USE_BACKEND && (
+            <button
+              className="btn btn-outline btn-sm"
+              onClick={handleExport}
+              disabled={exporting}
+            >
+              {exporting ? 'Exportando...' : 'Exportar empleados'}
             </button>
-          </div>
-        )}
+          )}
+          {!isReadOnly && (
+            <>
+              {USE_BACKEND ? (
+                <button className="btn btn-outline btn-sm" onClick={openImportModal}>
+                  Importar Excel
+                </button>
+              ) : (
+                <button
+                  className="btn btn-outline btn-sm"
+                  disabled
+                  title="La importación desde Excel solo está disponible en modo backend."
+                  style={{ cursor: 'not-allowed', opacity: 0.6 }}
+                >
+                  Importar Excel
+                </button>
+              )}
+              <button type="button" className="btn btn-primary btn-sm" onClick={openCreate}>
+                + Nuevo Empleado
+              </button>
+            </>
+          )}
+        </div>
       </div>
       <div className="admin-body">
         <div className="search-bar">
@@ -600,10 +639,15 @@ export default function Employees() {
           </div>
         ) : importResult ? (
           <div>
-            {importResult.errors && importResult.errors.length > 0 ? (
-              <p style={{ marginBottom: 12, fontWeight: 500, color: '#d97706' }}>
-                Importación completada con observaciones
-              </p>
+            {importResult.canImport === false ? (
+              <>
+                <p style={{ marginBottom: 8, fontWeight: 600, color: 'var(--danger, #dc2626)' }}>
+                  Importación bloqueada
+                </p>
+                <p style={{ color: 'var(--danger, #dc2626)', fontSize: '0.875rem', marginBottom: 12, padding: '8px 12px', background: '#fef2f2', borderRadius: 4 }}>
+                  Se encontraron {importResult.errorCount ?? (importResult.errors ? importResult.errors.length : 0)} error(es) bloqueantes. No se importó ningún registro (0 empleados y 0 beneficiarios afectados). Corrige el archivo y vuelve a intentarlo.
+                </p>
+              </>
             ) : (
               <p style={{ marginBottom: 12, fontWeight: 500, color: 'var(--success, #16a34a)' }}>
                 Importación completada exitosamente
@@ -636,13 +680,32 @@ export default function Employees() {
                   <td style={{ padding: '4px 8px', color: 'var(--gray-500)' }}>Filas omitidas</td>
                   <td style={{ padding: '4px 8px', fontWeight: 600 }}>{importResult.skippedRows}</td>
                 </tr>
-                {importResult.errors && importResult.errors.length > 0 && (
+                {importResult.canImport === false &&
+                  (importResult.issues || importResult.errors || []).length > 0 && (
                   <tr>
-                    <td style={{ padding: '4px 8px', color: 'var(--danger, #dc2626)', verticalAlign: 'top' }}>Errores</td>
+                    <td style={{ padding: '4px 8px', color: 'var(--danger, #dc2626)', verticalAlign: 'top' }}>
+                      Errores
+                    </td>
                     <td style={{ padding: '4px 8px' }}>
-                      {importResult.errors.map((e, i) => (
-                        <div key={i} style={{ color: 'var(--danger, #dc2626)', fontSize: '0.8125rem', marginBottom: 2 }}>
-                          Fila {e.row}: {e.message}
+                      {(importResult.issues && importResult.issues.length > 0
+                        ? importResult.issues
+                        : importResult.errors || []
+                      ).map((e, i) => (
+                        <div
+                          key={i}
+                          style={{
+                            color: 'var(--danger, #dc2626)',
+                            fontSize: '0.8125rem',
+                            marginBottom: 4,
+                          }}
+                        >
+                          <strong>Fila {e.row}</strong>
+                          {e.relatedRow ? ` (relacionada con fila ${e.relatedRow})` : ''}
+                          {e.columnLabel ? ` · ${e.columnLabel}` : ''}
+                          {e.value ? ` · "${e.value}"` : ''}
+                          {e.code ? ` · [${e.code}]` : ''}
+                          <br />
+                          {e.message}
                         </div>
                       ))}
                     </td>

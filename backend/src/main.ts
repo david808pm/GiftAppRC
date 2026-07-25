@@ -5,7 +5,6 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
-import { TimingInterceptor } from './common/interceptors/timing.interceptor';
 import { join } from 'path';
 import type { Response } from 'express';
 
@@ -44,12 +43,6 @@ async function bootstrap() {
 
   // Global exception filter
   app.useGlobalFilters(new HttpExceptionFilter());
-
-  // Timing interceptor (only when explicitly enabled for performance measurement)
-  if (process.env.ENABLE_TIMING_LOGS === 'true') {
-    app.useGlobalInterceptors(new TimingInterceptor());
-    Logger.log('⏱️  Timing logs enabled', 'Bootstrap');
-  }
 
   // Serve uploaded files statically. Keep images viewable inline but prevent
   // MIME sniffing (defense in depth alongside upload-time magic-byte checks).

@@ -22,3 +22,6 @@ Thumbs.db
 
 # Prisma
 prisma/migrations
+
+# Benchmark
+benchmark-results/

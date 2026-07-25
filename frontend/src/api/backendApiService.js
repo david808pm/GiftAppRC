@@ -115,6 +115,12 @@ export function mapGiftFromApi(gift) {
   return {
     ...gift,
     imageUrls: gift.images?.map((img) => img.imageUrl) || [],
+    images: (gift.images || []).map((img) => ({
+      id: img.id,
+      imageUrl: img.imageUrl,
+      isPrimary: img.isPrimary,
+      sortOrder: img.sortOrder,
+    })),
     stock: Number(gift.stock),
     minAge: Number(gift.minAge),
     maxAge: Number(gift.maxAge),
@@ -154,10 +160,29 @@ export async function deleteGift(id) {
   return apiClient.delete(`/admin/gifts/${id}`);
 }
 
-export async function uploadGiftImage(giftId, file) {
+export async function uploadGiftImage(giftId, files) {
+  const formData = new FormData();
+  const fileArray = Array.isArray(files) ? files : [files];
+  fileArray.forEach((file) => formData.append('image', file));
+  return apiClient.upload(`/admin/gifts/${giftId}/images`, formData);
+}
+
+export async function deleteGiftImage(giftId, imageId) {
+  return apiClient.delete(`/admin/gifts/${giftId}/images/${imageId}`);
+}
+
+export async function deleteAllGiftImages(giftId) {
+  return apiClient.delete(`/admin/gifts/${giftId}/images`);
+}
+
+export async function setPrimaryGiftImage(giftId, imageId) {
+  return apiClient.patch(`/admin/gifts/${giftId}/images/${imageId}/primary`);
+}
+
+export async function replaceGiftImage(giftId, imageId, file) {
   const formData = new FormData();
   formData.append('image', file);
-  return apiClient.upload(`/admin/gifts/${giftId}/images`, formData);
+  return apiClient.uploadPut(`/admin/gifts/${giftId}/images/${imageId}`, formData);
 }
 
 export async function fetchSelections(query = {}) {
@@ -195,6 +220,10 @@ export async function downloadSelectionsExcel(query = {}) {
   return apiClient.downloadBlob('/admin/reports/selections/export-xlsx', query);
 }
 
+export async function downloadEmployeesExcel(query = {}) {
+  return apiClient.downloadBlob('/admin/employees/export-xlsx', query);
+}
+
 // ── Import ────────────────────────────────────────────────
 
 export async function importEmployeesBeneficiaries(file) {
@@ -223,6 +252,10 @@ export async function changeAdminUserPassword(id, password) {
 
 export async function updateAdminUserStatus(id, isActive) {
   return apiClient.patch(`/admin/users/${id}/status`, { isActive });
+}
+
+export async function deleteAdminUser(id) {
+  return apiClient.delete(`/admin/users/${id}`);
 }
 
 // ── Companies ─────────────────────────────────────────────
