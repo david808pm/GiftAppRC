@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateAdminUserDto } from './dto/create-admin-user.dto';
@@ -170,5 +171,38 @@ export class AdminUsersService {
         company: { select: { id: true, name: true, slug: true } },
       },
     });
+  }
+
+  async remove(targetUserId: number, authenticatedUserId: number) {
+    if (targetUserId === authenticatedUserId) {
+      throw new ForbiddenException('No puedes eliminar tu propio usuario.');
+    }
+
+    const target = await this.prisma.adminUser.findUnique({
+      where: { id: targetUserId },
+      include: { role: { select: { name: true } } },
+    });
+
+    if (!target) {
+      throw new NotFoundException('Usuario no encontrado.');
+    }
+
+    const result = await this.prisma.adminUser.deleteMany({
+      where: {
+        id: targetUserId,
+        role: { name: 'COMPANY_VIEWER' },
+      },
+    });
+
+    if (result.count !== 1) {
+      throw new ForbiddenException(
+        'Solo se pueden eliminar usuarios con rol COMPANY_VIEWER.',
+      );
+    }
+
+    return {
+      success: true,
+      message: 'Usuario eliminado correctamente.',
+    };
   }
 }

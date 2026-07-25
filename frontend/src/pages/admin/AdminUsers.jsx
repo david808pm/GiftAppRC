@@ -6,6 +6,7 @@ import {
   giftAppUpdateAdminUser,
   giftAppChangeAdminUserPassword,
   giftAppUpdateAdminUserStatus,
+  giftAppDeleteAdminUser,
   giftAppGetCompanies,
   USE_BACKEND,
 } from '../../api/giftAppService';
@@ -30,7 +31,7 @@ const EMPTY_USER = {
 };
 
 export default function AdminUsers() {
-  const { isSuperAdmin } = useOutletContext() || {};
+  const { isSuperAdmin, session } = useOutletContext() || {};
   const [users, setUsers] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [search, setSearch] = useState('');
@@ -40,6 +41,7 @@ export default function AdminUsers() {
   const [errors, setErrors] = useState({});
   const { toasts, addToast, removeToast } = useToast();
   const [statusTarget, setStatusTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ password: '', confirmPassword: '' });
   const [passwordErrors, setPasswordErrors] = useState({});
@@ -192,6 +194,22 @@ export default function AdminUsers() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+
+    setSaving(true);
+    try {
+      await giftAppDeleteAdminUser(deleteTarget.id);
+      setUsers((prev) => prev.filter((u) => u.id !== deleteTarget.id));
+      setDeleteTarget(null);
+      addToast('Usuario eliminado correctamente.');
+    } catch (err) {
+      addToast(err.message || 'Error al eliminar el usuario.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const updateField = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     setErrors((prev) => ({ ...prev, [field]: '' }));
@@ -291,6 +309,14 @@ export default function AdminUsers() {
                         >
                           {u.isActive ? 'Desactivar' : 'Activar'}
                         </button>
+                        {isSuperAdmin && u.role?.name === 'COMPANY_VIEWER' && u.id !== session?.id && (
+                          <button
+                            className="btn btn-danger btn-sm"
+                            onClick={() => setDeleteTarget(u)}
+                          >
+                            Eliminar
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -428,6 +454,17 @@ export default function AdminUsers() {
         loading={saving}
         onConfirm={handleStatusChange}
         onCancel={() => setStatusTarget(null)}
+      />
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        title="Eliminar Usuario Visor"
+        message={`¿Eliminar este usuario visor?\n\nEl usuario perderá el acceso administrativo.\nEsta acción no eliminará la empresa, campañas, empleados,\nbeneficiarios, regalos ni selecciones relacionadas.`}
+        confirmText="Eliminar usuario"
+        cancelText="Cancelar"
+        danger={true}
+        loading={saving}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
       />
       <Toast toasts={toasts} onRemove={removeToast} />
     </div>

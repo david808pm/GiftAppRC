@@ -11,6 +11,7 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
+  UseInterceptors,
   Req,
 } from '@nestjs/common';
 import { BeneficiariesService } from './beneficiaries.service';
@@ -21,6 +22,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Request } from 'express';
+import { TrackPerformance } from '../common/decorators/track-performance.decorator';
+import { PerformanceTimingInterceptor } from '../common/interceptors/performance-timing.interceptor';
 
 @Controller('admin/beneficiaries')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -29,6 +32,8 @@ export class BeneficiariesAdminController {
 
   @Get()
   @Roles('SUPER_ADMIN', 'ADMIN', 'COMPANY_VIEWER')
+  @UseInterceptors(PerformanceTimingInterceptor)
+  @TrackPerformance('admin.beneficiaries.list')
   findAll(@Query() query: BeneficiaryQueryDto, @Req() req: Request) {
     const user = req.user as any;
     return this.beneficiariesService.findAll(query, user);

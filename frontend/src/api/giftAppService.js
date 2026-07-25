@@ -466,6 +466,46 @@ export async function giftAppUploadGiftImage(giftId, file) {
   throw new Error('La carga de imágenes solo está disponible en modo backend.');
 }
 
+export async function giftAppDeleteGiftImage(giftId, imageId) {
+  if (USE_BACKEND) {
+    const { deleteGiftImage } = await getBackendAuth();
+    const result = await deleteGiftImage(giftId, imageId);
+    clearCache('gifts_all');
+    return result;
+  }
+  throw new Error('La gestión de imágenes solo está disponible en modo backend.');
+}
+
+export async function giftAppDeleteAllGiftImages(giftId) {
+  if (USE_BACKEND) {
+    const { deleteAllGiftImages } = await getBackendAuth();
+    const result = await deleteAllGiftImages(giftId);
+    clearCache('gifts_all');
+    return result;
+  }
+  throw new Error('La gestión de imágenes solo está disponible en modo backend.');
+}
+
+export async function giftAppSetPrimaryGiftImage(giftId, imageId) {
+  if (USE_BACKEND) {
+    const { setPrimaryGiftImage } = await getBackendAuth();
+    const result = await setPrimaryGiftImage(giftId, imageId);
+    clearCache('gifts_all');
+    return result;
+  }
+  throw new Error('La gestión de imágenes solo está disponible en modo backend.');
+}
+
+export async function giftAppReplaceGiftImage(giftId, imageId, file) {
+  if (USE_BACKEND) {
+    const { replaceGiftImage } = await getBackendAuth();
+    const result = await replaceGiftImage(giftId, imageId, file);
+    clearCache('gifts_all');
+    return result;
+  }
+  throw new Error('La gestión de imágenes solo está disponible en modo backend.');
+}
+
 export async function giftAppDeleteGift(id) {
   if (USE_BACKEND) {
     const { deleteGift } = await getBackendAuth();
@@ -579,6 +619,15 @@ export async function giftAppDownloadSelectionsExcel(params = {}) {
   if (USE_BACKEND) {
     const { downloadSelectionsExcel } = await getBackendAuth();
     return await downloadSelectionsExcel(params);
+  }
+
+  throw new Error('La exportación Excel solo está disponible en modo backend.');
+}
+
+export async function giftAppDownloadEmployeesExcel(params = {}) {
+  if (USE_BACKEND) {
+    const { downloadEmployeesExcel } = await getBackendAuth();
+    return await downloadEmployeesExcel(params);
   }
 
   throw new Error('La exportación Excel solo está disponible en modo backend.');
@@ -781,6 +830,14 @@ export async function giftAppUpdateAdminUserStatus(id, isActive) {
   if (USE_BACKEND) {
     const { updateAdminUserStatus } = await getBackendAuth();
     return await updateAdminUserStatus(id, isActive);
+  }
+  throw new Error('La gestión de usuarios solo está disponible en modo backend.');
+}
+
+export async function giftAppDeleteAdminUser(id) {
+  if (USE_BACKEND) {
+    const { deleteAdminUser } = await getBackendAuth();
+    return await deleteAdminUser(id);
   }
   throw new Error('La gestión de usuarios solo está disponible en modo backend.');
 }

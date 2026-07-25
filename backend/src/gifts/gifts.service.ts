@@ -4,6 +4,7 @@ import {
   ConflictException,
   BadRequestException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateGiftDto } from './dto/create-gift.dto';
@@ -358,52 +359,276 @@ export class GiftsService {
     });
   }
 
-  // ── Admin: upload image ─────────────────────────────────
+  // ── Admin: upload images ────────────────────────────────
 
-  async uploadImage(
+  async uploadImages(
     giftId: number,
-    buffer: Buffer,
-    mimetype: string,
-    originalname: string,
+    files: Express.Multer.File[],
     adminUserId: number,
   ) {
     const gift = await this.findOne(giftId);
     const campaignId = gift.campaignId;
 
-    SupabaseStorageService.validateMimeType(mimetype);
-    SupabaseStorageService.validateFileSize(buffer.length);
+    if (!files || files.length === 0) {
+      return this.findOne(giftId);
+    }
 
-    const ext = SupabaseStorageService.sanitizeExtension(mimetype);
-    const storagePath = this.storage.buildStoragePath(campaignId, giftId, ext);
+    const existingCount = await this.prisma.giftImage.count({
+      where: { giftId },
+    });
 
-    const publicUrl = await this.storage.uploadFile(buffer, storagePath, mimetype);
+    const remainingSlots = 3 - existingCount;
+
+    if (files.length > remainingSlots) {
+      throw new BadRequestException(
+        'Un regalo puede tener máximo 3 imágenes.',
+      );
+    }
+
+    for (const file of files) {
+      SupabaseStorageService.validateMimeType(file.mimetype);
+      SupabaseStorageService.validateFileSize(file.size);
+    }
+
+    const uploadResults = await Promise.allSettled(
+      files.map(async (file) => {
+        const ext = SupabaseStorageService.sanitizeExtension(file.mimetype);
+        const storagePath = this.storage.buildStoragePath(campaignId, giftId, ext);
+        const publicUrl = await this.storage.uploadFile(
+          file.buffer,
+          storagePath,
+          file.mimetype,
+        );
+        return { url: publicUrl, originalname: file.originalname, storagePath };
+      }),
+    );
+
+    const fulfilled = uploadResults
+      .filter(
+        (r): r is PromiseFulfilledResult<{
+          url: string;
+          originalname: string;
+          storagePath: string;
+        }> => r.status === 'fulfilled',
+      )
+      .map((r) => r.value);
+    const rejections = uploadResults.filter(
+      (r): r is PromiseRejectedResult => r.status === 'rejected',
+    );
+
+    if (rejections.length > 0) {
+      await Promise.allSettled(
+        fulfilled.map((r) => this.storage.deleteFile(r.storagePath)),
+      );
+      throw rejections[0].reason;
+    }
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.giftImage.findMany({
+          where: { giftId },
+          orderBy: { sortOrder: 'asc' },
+        });
+
+        let nextSortOrder =
+          existing.length > 0
+            ? existing[existing.length - 1].sortOrder + 1
+            : 0;
+
+        const hasPrimary = existing.some((img) => img.isPrimary);
+
+        for (const uploaded of fulfilled) {
+          await tx.giftImage.create({
+            data: {
+              giftId,
+              imageUrl: uploaded.url,
+              altText: uploaded.originalname,
+              sortOrder: nextSortOrder,
+              isPrimary: !hasPrimary && nextSortOrder === 0,
+            },
+          });
+          nextSortOrder++;
+        }
+      });
+    } catch (err) {
+      await Promise.allSettled(
+        fulfilled.map((r) => this.storage.deleteFile(r.storagePath)),
+      );
+      throw err;
+    }
+
+    return this.findOne(giftId);
+  }
+
+  // ── Admin: image management ─────────────────────────────
+
+  private extractStoragePath(publicUrl: string): string | null {
+    try {
+      const url = new URL(publicUrl);
+      const parts = url.pathname.split('/');
+      const publicIdx = parts.indexOf('public');
+      if (publicIdx === -1) return null;
+      return parts.slice(publicIdx + 2).join('/');
+    } catch {
+      return null;
+    }
+  }
+
+  async deleteImage(giftId: number, imageId: number) {
+    await this.findOne(giftId);
+
+    const image = await this.prisma.giftImage.findFirst({
+      where: { id: imageId, giftId },
+    });
+
+    if (!image) {
+      throw new NotFoundException('Imagen no encontrada.');
+    }
+
+    const storagePath = this.extractStoragePath(image.imageUrl);
+    if (storagePath) {
+      this.storage.deleteFile(storagePath).catch((err) => {
+        Logger.warn(`deleteImage: cleanup failed for ${storagePath}: ${err?.message}`, GiftsService.name);
+      });
+    }
+
+    const wasPrimary = image.isPrimary;
 
     await this.prisma.$transaction(async (tx) => {
-      // Shift existing images to make room for the new primary
-      const existing = await tx.giftImage.findMany({
+      await tx.giftImage.delete({ where: { id: imageId } });
+
+      if (wasPrimary) {
+        const firstRemaining = await tx.giftImage.findFirst({
+          where: { giftId },
+          orderBy: { sortOrder: 'asc' },
+        });
+        if (firstRemaining) {
+          await tx.giftImage.update({
+            where: { id: firstRemaining.id },
+            data: { isPrimary: true },
+          });
+        }
+      }
+
+      const remaining = await tx.giftImage.findMany({
         where: { giftId },
         orderBy: { sortOrder: 'asc' },
       });
-
-      for (let i = 0; i < existing.length; i++) {
+      for (let i = 0; i < remaining.length; i++) {
         await tx.giftImage.update({
-          where: { id: existing[i].id },
-          data: {
-            sortOrder: i + 1,
-            isPrimary: false,
-          },
+          where: { id: remaining[i].id },
+          data: { sortOrder: i },
         });
       }
+    });
 
-      await tx.giftImage.create({
-        data: {
-          giftId,
-          imageUrl: publicUrl,
-          altText: originalname,
-          sortOrder: 0,
-          isPrimary: true,
-        },
+    return this.findOne(giftId);
+  }
+
+  async deleteAllImages(giftId: number) {
+    await this.findOne(giftId);
+
+    const images = await this.prisma.giftImage.findMany({
+      where: { giftId },
+    });
+
+    await Promise.allSettled(
+      images.map(async (img) => {
+        const storagePath = this.extractStoragePath(img.imageUrl);
+        if (storagePath) {
+          await this.storage.deleteFile(storagePath);
+        }
+      }),
+    );
+
+    await this.prisma.giftImage.deleteMany({ where: { giftId } });
+
+    return this.findOne(giftId);
+  }
+
+  async setPrimaryImage(giftId: number, imageId: number) {
+    await this.findOne(giftId);
+
+    const image = await this.prisma.giftImage.findFirst({
+      where: { id: imageId, giftId },
+    });
+
+    if (!image) {
+      throw new NotFoundException('Imagen no encontrada.');
+    }
+
+    if (image.isPrimary) {
+      return this.findOne(giftId);
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.giftImage.updateMany({
+        where: { giftId },
+        data: { isPrimary: false },
       });
+
+      await tx.giftImage.update({
+        where: { id: imageId },
+        data: { isPrimary: true, sortOrder: 0 },
+      });
+
+      const others = await tx.giftImage.findMany({
+        where: { giftId, id: { not: imageId } },
+        orderBy: { sortOrder: 'asc' },
+      });
+
+      for (let i = 0; i < others.length; i++) {
+        await tx.giftImage.update({
+          where: { id: others[i].id },
+          data: { sortOrder: i + 1 },
+        });
+      }
+    });
+
+    return this.findOne(giftId);
+  }
+
+  async replaceImage(
+    giftId: number,
+    imageId: number,
+    file: Express.Multer.File,
+  ) {
+    const gift = await this.findOne(giftId);
+
+    const oldImage = await this.prisma.giftImage.findFirst({
+      where: { id: imageId, giftId },
+    });
+
+    if (!oldImage) {
+      throw new NotFoundException('Imagen no encontrada.');
+    }
+
+    const campaignId = gift.campaignId;
+
+    SupabaseStorageService.validateMimeType(file.mimetype);
+    SupabaseStorageService.validateFileSize(file.size);
+
+    const ext = SupabaseStorageService.sanitizeExtension(file.mimetype);
+    const storagePath = this.storage.buildStoragePath(campaignId, giftId, ext);
+    const publicUrl = await this.storage.uploadFile(
+      file.buffer,
+      storagePath,
+      file.mimetype,
+    );
+
+    const oldPath = this.extractStoragePath(oldImage.imageUrl);
+    if (oldPath) {
+      this.storage.deleteFile(oldPath).catch((err) => {
+        Logger.warn(`replaceImage: cleanup failed for ${oldPath}: ${err?.message}`, GiftsService.name);
+      });
+    }
+
+    await this.prisma.giftImage.update({
+      where: { id: imageId },
+      data: {
+        imageUrl: publicUrl,
+        altText: file.originalname,
+      },
     });
 
     return this.findOne(giftId);

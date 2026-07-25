@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsInt, IsEnum, IsBooleanString, Min } from 'class-validator';
+import { IsOptional, IsString, IsInt, IsEnum, IsBooleanString, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 import { Gender } from '@prisma/client';
 
@@ -35,5 +35,6 @@ export class BeneficiaryQueryDto {
   @Type(() => Number)
   @IsInt({ message: 'pageSize debe ser un número entero.' })
   @Min(1, { message: 'pageSize debe ser mayor o igual a 1.' })
+  @Max(100, { message: 'pageSize no debe ser mayor a 100.' })
   pageSize?: number;
 }

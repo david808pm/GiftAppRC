@@ -1,9 +1,11 @@
-import { Controller, Get, Query, UseGuards, Res, StreamableFile, Req } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Res, Req, UseInterceptors } from '@nestjs/common';
 import { SelectionsService } from '../selections/selections.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Response, Request } from 'express';
+import { TrackPerformance } from '../common/decorators/track-performance.decorator';
+import { PerformanceTimingInterceptor } from '../common/interceptors/performance-timing.interceptor';
 
 function todayString(): string {
   const d = new Date();
@@ -39,6 +41,8 @@ export class ReportsAdminController {
 
   @Get('export-xlsx')
   @Roles('SUPER_ADMIN', 'ADMIN', 'COMPANY_VIEWER')
+  @UseInterceptors(PerformanceTimingInterceptor)
+  @TrackPerformance('admin.export.selections')
   async exportXlsx(
     @Res() res: Response,
     @Query('campaignId') campaignId?: string,

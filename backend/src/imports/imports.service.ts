@@ -1,24 +1,33 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 import * as ExcelJS from 'exceljs';
-
-interface ImportRow {
-  campaignSlug: string;
-  employeeDocumentId: string;
-  employeeFullName: string;
-  employeeEmail?: string;
-  employeePhone?: string;
-  shippingAddress?: string;
-  shippingCity?: string;
-  beneficiaryFullName: string;
-  beneficiaryAge: number;
-  beneficiaryGender: string;
-}
-
-interface ImportError {
-  row: number;
-  message: string;
-}
+import {
+  ImportIssue,
+  NormalizedRow,
+  MAX_CAMPAIGN_SLUG_LEN,
+  MAX_EMPLOYEE_NAME_LEN,
+  MAX_EMAIL_LEN,
+  MAX_PHONE_LEN,
+  MAX_DOCUMENT_LEN,
+  MAX_ADDRESS_LEN,
+  MAX_CITY_LEN,
+  MAX_BENEFICIARY_NAME_LEN,
+  buildBeneficiaryKey,
+  buildEmployeeInfoTuple,
+  buildEmployeeKey,
+  checkBeneficiaryAge,
+  checkBeneficiaryGender,
+  checkDocument,
+  checkEmail,
+  checkMaxLength,
+  checkPhone,
+  checkRequired,
+  detectCrossRowIssues,
+  normalizeGender,
+  normalizeName,
+  validateHeaders,
+} from './import-validation';
 
 interface ImportWarning {
   row: number;
@@ -26,41 +35,28 @@ interface ImportWarning {
 }
 
 export interface ImportResult {
+  /** false when at least one ERROR-severity issue was found (atomic rule). */
+  canImport: boolean;
   totalRows: number;
   employeesCreated: number;
   employeesUpdated: number;
   beneficiariesCreated: number;
+  /** Present for forward-compat; always 0 in the current importer. */
+  beneficiariesUpdated: number;
   skippedRows: number;
-  errors: ImportError[];
+  /** ERROR-severity issues (rich shape, backward-compatible: each has row+message). */
+  errors: ImportIssue[];
+  /** WARNING-severity issues (legacy shape: row+message). */
   warnings: ImportWarning[];
-}
-
-const EXPECTED_HEADERS = [
-  'campaignSlug',
-  'employeeDocumentId',
-  'employeeFullName',
-  'employeeEmail',
-  'employeePhone',
-  'shippingAddress',
-  'shippingCity',
-  'beneficiaryFullName',
-  'beneficiaryAge',
-  'beneficiaryGender',
-];
-
-function normalizeGender(raw: string): string | null {
-  const v = raw.trim().toLowerCase();
-  if (v === 'male' || v === 'masculino' || v === 'm') return 'male';
-  if (v === 'female' || v === 'femenino' || v === 'f') return 'female';
-  return null;
-}
-
-function normalizeName(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+  /** ALL issues (errors + warnings) in rich shape, for detailed UI reporting. */
+  issues: ImportIssue[];
+  /** Numerical counts for structured performance timing metadata. */
+  errorCount: number;
+  warningCount: number;
 }
 
 /**
- * Normalizes an ExcelJS cell value to a plain primitive, unwrapping rich text,
+ * Normalize an ExcelJS cell value to a plain primitive, unwrapping rich text,
  * formula results and hyperlinks so downstream string/number parsing matches
  * the previous sheet_to_json behavior.
  */
@@ -79,6 +75,11 @@ function cellToValue(value: ExcelJS.CellValue): unknown {
     return String(value);
   }
   return value;
+}
+
+/** Backward-compatible legacy shape, used where the UI reads {row,message}. */
+function toLegacyWarning(issue: ImportIssue): ImportWarning {
+  return { row: issue.row, message: issue.message };
 }
 
 @Injectable()
@@ -117,7 +118,12 @@ export class ImportsService {
       headers[col] = String(cellToValue(cell.value) ?? '').trim();
     });
 
-    const rawRows: Record<string, unknown>[] = [];
+    interface RawRow {
+      excelRow: number;
+      rawIndex: number;
+      data: Record<string, unknown>;
+    }
+    const rawRows: RawRow[] = [];
     sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
       if (rowNumber === 1) return; // skip header row
       const obj: Record<string, unknown> = {};
@@ -126,115 +132,183 @@ export class ImportsService {
         if (!key) continue;
         obj[key] = cellToValue(row.getCell(col).value);
       }
-      rawRows.push(obj);
+      rawRows.push({ excelRow: rowNumber, rawIndex: rowNumber - 2, data: obj });
     });
 
-    if (rawRows.length === 0) {
+    const totalRows = rawRows.length;
+
+    // Empty file: nothing to validate, nothing to write.
+    if (totalRows === 0) {
       return {
+        canImport: true,
         totalRows: 0,
         employeesCreated: 0,
         employeesUpdated: 0,
         beneficiariesCreated: 0,
+        beneficiariesUpdated: 0,
         skippedRows: 0,
         errors: [],
         warnings: [],
+        issues: [],
+        errorCount: 0,
+        warningCount: 0,
       };
     }
 
     // ── 2. Validate headers ────────────────────────────────
-    const fileHeaders = Object.keys(rawRows[0]).map((h) => h.trim());
-    const missingHeaders = EXPECTED_HEADERS.filter(
-      (h) => !fileHeaders.includes(h),
-    );
-    if (missingHeaders.length > 0) {
-      throw new BadRequestException(
-        `El archivo Excel debe contener las columnas esperadas. Faltan: ${missingHeaders.join(', ')}.`,
-      );
-    }
+    const fileHeaders = Object.keys(rawRows[0].data);
+    const issues: ImportIssue[] = [...validateHeaders(fileHeaders)];
 
-    // ── 3. First pass: validate & normalize all rows ───────
-    const errors: ImportError[] = [];
-    const validRows: (ImportRow & { excelRow: number })[] = [];
-
-    for (let i = 0; i < rawRows.length; i++) {
-      const excelRow = i + 2; // header is row 1
-      const r = rawRows[i];
+    // ── 3. First pass: validate & normalize every row & column ───
+    const normalizedRows: NormalizedRow[] = [];
+    for (const rr of rawRows) {
+      const excelRow = rr.excelRow;
+      const r = rr.data;
 
       const campaignSlug = String(r['campaignSlug'] ?? '').trim();
       const employeeDocumentId = String(r['employeeDocumentId'] ?? '').trim();
       const employeeFullName = String(r['employeeFullName'] ?? '').trim();
-      const employeeEmail =
-        String(r['employeeEmail'] ?? '').trim().toLowerCase() || undefined;
-      const employeePhone =
-        String(r['employeePhone'] ?? '').trim() || undefined;
-      const shippingAddress =
-        String(r['shippingAddress'] ?? '').trim() || undefined;
-      const shippingCity =
-        String(r['shippingCity'] ?? '').trim() || undefined;
-      const beneficiaryFullName = String(
-        r['beneficiaryFullName'] ?? '',
-      ).trim();
+      const employeeEmailRaw = String(r['employeeEmail'] ?? '').trim();
+      const employeeEmail = employeeEmailRaw ? employeeEmailRaw.toLowerCase() : null;
+      const employeePhoneRaw = String(r['employeePhone'] ?? '').trim();
+      const employeePhone = employeePhoneRaw || null;
+      const shippingAddressRaw = String(r['shippingAddress'] ?? '').trim();
+      const shippingAddress = shippingAddressRaw || null;
+      const shippingCityRaw = String(r['shippingCity'] ?? '').trim();
+      const shippingCity = shippingCityRaw || null;
+      const beneficiaryFullName = String(r['beneficiaryFullName'] ?? '').trim();
       const beneficiaryAgeRaw = r['beneficiaryAge'];
-      const beneficiaryGenderRaw = String(
-        r['beneficiaryGender'] ?? '',
-      ).trim();
+      const beneficiaryGenderRaw = String(r['beneficiaryGender'] ?? '').trim();
 
-      // Required validations
-      if (!campaignSlug) {
-        errors.push({
-          row: excelRow,
-          message: 'El campaignSlug es obligatorio.',
-        });
-        continue;
-      }
-      if (!employeeDocumentId) {
-        errors.push({
-          row: excelRow,
-          message: 'El employeeDocumentId es obligatorio.',
-        });
-        continue;
-      }
-      if (!employeeFullName) {
-        errors.push({
-          row: excelRow,
-          message: 'El employeeFullName es obligatorio.',
-        });
-        continue;
-      }
-      if (!beneficiaryFullName) {
-        errors.push({
-          row: excelRow,
-          message: 'El beneficiaryFullName es obligatorio.',
-        });
-        continue;
-      }
+      // Required field checks (independent; never stop on first failure).
+      const requiredIssues = [
+        checkRequired(
+          excelRow,
+          'campaignSlug',
+          campaignSlug,
+          'El slug de la campaña es obligatorio.',
+        ),
+        checkRequired(
+          excelRow,
+          'employeeDocumentId',
+          employeeDocumentId,
+          'El documento del empleado es obligatorio.',
+        ),
+        checkRequired(
+          excelRow,
+          'employeeFullName',
+          employeeFullName,
+          'El nombre del empleado es obligatorio.',
+        ),
+        checkRequired(
+          excelRow,
+          'beneficiaryFullName',
+          beneficiaryFullName,
+          'El nombre del beneficiario es obligatorio.',
+        ),
+      ].filter((i): i is ImportIssue => i !== null);
+      issues.push(...requiredIssues);
 
-      const ageNum = Number(beneficiaryAgeRaw);
-      if (
-        !Number.isInteger(ageNum) ||
-        ageNum < 0 ||
-        ageNum > 13
-      ) {
-        errors.push({
-          row: excelRow,
-          message: 'La edad del beneficiario debe ser un número entero entre 0 y 13.',
-        });
-        continue;
-      }
-      const beneficiaryAge = ageNum;
+      // Length checks (independent).
+      const lengthIssues = [
+        checkMaxLength(
+          excelRow,
+          'campaignSlug',
+          campaignSlug,
+          MAX_CAMPAIGN_SLUG_LEN,
+          `El slug de la campaña no puede superar los ${MAX_CAMPAIGN_SLUG_LEN} caracteres.`,
+        ),
+        checkMaxLength(
+          excelRow,
+          'employeeFullName',
+          employeeFullName,
+          MAX_EMPLOYEE_NAME_LEN,
+          `El nombre del empleado no puede superar los ${MAX_EMPLOYEE_NAME_LEN} caracteres.`,
+        ),
+        checkMaxLength(
+          excelRow,
+          'shippingAddress',
+          shippingAddressRaw,
+          MAX_ADDRESS_LEN,
+          `La dirección de entrega no puede superar los ${MAX_ADDRESS_LEN} caracteres.`,
+        ),
+        checkMaxLength(
+          excelRow,
+          'shippingCity',
+          shippingCityRaw,
+          MAX_CITY_LEN,
+          `La ciudad no puede superar los ${MAX_CITY_LEN} caracteres.`,
+        ),
+        checkMaxLength(
+          excelRow,
+          'beneficiaryFullName',
+          beneficiaryFullName,
+          MAX_BENEFICIARY_NAME_LEN,
+          `El nombre del beneficiario no puede superar los ${MAX_BENEFICIARY_NAME_LEN} caracteres.`,
+        ),
+      ].filter((i): i is ImportIssue => i !== null);
+      issues.push(...lengthIssues);
 
-      const beneficiaryGender = normalizeGender(beneficiaryGenderRaw);
-      if (!beneficiaryGender) {
-        errors.push({
-          row: excelRow,
-          message:
-            'El género del beneficiario debe ser male/female (o masculino/femenino).',
-        });
-        continue;
+      // Document format/length (digits-only, 6-10).
+      if (employeeDocumentId.trim() !== '') {
+        issues.push(...checkDocument(excelRow, 'employeeDocumentId', employeeDocumentId));
       }
-
-      validRows.push({
+      // VarChar(50) technical safety for the document (in addition to the
+      // business 6-10 rule, kept as a hard DB guard).
+      const docLen = checkMaxLength(
         excelRow,
+        'employeeDocumentId',
+        employeeDocumentId,
+        MAX_DOCUMENT_LEN,
+        `El documento del empleado no puede superar los ${MAX_DOCUMENT_LEN} caracteres.`,
+      );
+      if (docLen) issues.push(docLen);
+
+      // Email (optional in this importer, per the audit).
+      issues.push(
+        ...checkEmail(excelRow, 'employeeEmail', employeeEmailRaw, false),
+      );
+
+      // Phone (optional in this importer, per the audit).
+      issues.push(
+        ...checkPhone(excelRow, 'employeePhone', employeePhoneRaw, false),
+      );
+
+      // Beneficiary age + gender (required).
+      issues.push(...checkBeneficiaryAge(excelRow, 'beneficiaryAge', beneficiaryAgeRaw));
+      issues.push(
+        ...checkBeneficiaryGender(excelRow, 'beneficiaryGender', beneficiaryGenderRaw),
+      );
+
+      // Build normalized values for cross-row checks (only when complete).
+      const ageText = String(beneficiaryAgeRaw ?? '').trim();
+      let safeAge: number | null = null;
+      if (ageText !== '') {
+        const n = Number(ageText);
+        if (Number.isInteger(n) && n >= 0 && n <= 13) safeAge = n;
+      }
+      const genderNorm = normalizeGender(beneficiaryGenderRaw);
+
+      const employeeKey = buildEmployeeKey(campaignSlug, employeeDocumentId);
+      const beneficiaryKey = buildBeneficiaryKey(
+        employeeKey,
+        beneficiaryFullName,
+        safeAge,
+        genderNorm,
+      );
+      const employeeInfoTuple = employeeKey
+        ? buildEmployeeInfoTuple(
+            employeeFullName,
+            employeeEmail,
+            employeePhone,
+            shippingAddress,
+            shippingCity,
+          )
+        : null;
+
+      normalizedRows.push({
+        excelRow,
+        rawIndex: rr.rawIndex,
         campaignSlug,
         employeeDocumentId,
         employeeFullName,
@@ -243,47 +317,100 @@ export class ImportsService {
         shippingAddress,
         shippingCity,
         beneficiaryFullName,
-        beneficiaryAge,
-        beneficiaryGender,
+        beneficiaryAge: safeAge,
+        beneficiaryGender: genderNorm,
+        employeeKey,
+        beneficiaryKey,
+        employeeInfoTuple,
       });
     }
 
-    // ── 4. Preload campaigns by slug ───────────────────────
-    const slugs = [...new Set(validRows.map((r) => r.campaignSlug))];
-    const campaigns = await this.prisma.campaign.findMany({
-      where: { slug: { in: slugs }, deletedAt: null },
-      select: { id: true, slug: true, status: true },
-    });
+    // ── 4. Cross-row validation (duplicates + conflicts) ────
+    issues.push(...detectCrossRowIssues(normalizedRows));
+
+    // ── 5. Campaign existence + status (DB read, never a write) ──
+    const slugs = [...new Set(
+      normalizedRows
+        .map((r) => r.campaignSlug)
+        .filter((s) => s.trim() !== ''),
+    )];
+    // Fetched once and reused for the happy-path grouping (no second query).
     const campaignBySlug = new Map<string, { id: number; status: string }>();
-    for (const c of campaigns) {
-      campaignBySlug.set(c.slug, { id: c.id, status: c.status });
+    if (slugs.length > 0) {
+      const campaigns = await this.prisma.campaign.findMany({
+        where: { slug: { in: slugs }, deletedAt: null },
+        select: { id: true, slug: true, status: true },
+      });
+      for (const c of campaigns) {
+        campaignBySlug.set(c.slug, { id: c.id, status: c.status });
+      }
+      const foundSlugs = new Set(campaigns.map((c) => c.slug));
+      const statusByKey = new Map(campaigns.map((c) => [c.slug, c.status] as const));
+
+      for (const row of normalizedRows) {
+        const slug = row.campaignSlug;
+        if (slug.trim() === '') continue; // missing already reported
+        if (!foundSlugs.has(slug)) {
+          issues.push({
+            row: row.excelRow,
+            column: 'campaignSlug',
+            columnLabel: 'Campaña (slug)',
+            value: slug,
+            severity: 'ERROR',
+            code: 'CAMPAIGN_NOT_FOUND',
+            message: `La campaña "${slug}" no existe o fue eliminada.`,
+          });
+          continue;
+        }
+        const status = statusByKey.get(slug);
+        if (!status) continue;
+        if (status !== 'DRAFT' && status !== 'ACTIVE') {
+          issues.push({
+            row: row.excelRow,
+            column: 'campaignSlug',
+            columnLabel: 'Campaña (slug)',
+            value: slug,
+            severity: 'ERROR',
+            code: 'CAMPAIGN_STATUS_NOT_OPEN',
+            message: `La campaña "${slug}" no admite cargas (estado ${status}).`,
+          });
+        }
+      }
     }
 
-    // Remove rows whose campaign doesn't exist or isn't open for loading.
-    const rowsWithCampaign: (ImportRow & {
-      excelRow: number;
-      campaignId: number;
-    })[] = [];
-    for (const row of validRows) {
-      const c = campaignBySlug.get(row.campaignSlug);
-      if (!c) {
-        errors.push({
-          row: row.excelRow,
-          message: `La campaña "${row.campaignSlug}" no existe o fue eliminada.`,
-        });
-        continue;
-      }
-      if (c.status !== 'DRAFT' && c.status !== 'ACTIVE') {
-        errors.push({
-          row: row.excelRow,
-          message: `La campaña "${row.campaignSlug}" no admite cargas (estado ${c.status}).`,
-        });
-        continue;
-      }
-      rowsWithCampaign.push({ ...row, campaignId: c.id });
+    // ── 6. Atomic rule ─────────────────────────────────────
+    const errorIssues = issues.filter((i) => i.severity === 'ERROR');
+    const warningIssues = issues.filter((i) => i.severity === 'WARNING');
+
+    if (errorIssues.length > 0) {
+      // ZERO database writes may be performed.
+      return {
+        canImport: false,
+        totalRows,
+        employeesCreated: 0,
+        employeesUpdated: 0,
+        beneficiariesCreated: 0,
+        beneficiariesUpdated: 0,
+        skippedRows: 0,
+        errors: errorIssues,
+        warnings: warningIssues.map(toLegacyWarning),
+        issues,
+        errorCount: errorIssues.length,
+        warningCount: warningIssues.length,
+      };
     }
 
-    // ── 5. Group by (campaignId, employeeDocumentId) ───────
+    // ── 7. Happy path: group by (campaignId, employeeDocumentId) & batch ──
+    // Only rows that passed all validations reach here. Confirmed employees
+    // and already-existing beneficiaries produce non-blocking warnings and
+    // are skipped (no DB write) — this preserves idempotent re-upload.
+    const rowsWithCampaign = normalizedRows
+      .filter((r) => r.campaignSlug && campaignBySlug.has(r.campaignSlug))
+      .map((r) => ({
+        ...r,
+        campaignId: campaignBySlug.get(r.campaignSlug)!.id,
+      }));
+
     const groupKey = (cid: number, doc: string) => `${cid}::${doc}`;
     const groups = new Map<
       string,
@@ -291,11 +418,11 @@ export class ImportsService {
         campaignId: number;
         documentId: string;
         employeeFullName: string;
-        employeeEmail?: string;
-        employeePhone?: string;
-        shippingAddress?: string;
-        shippingCity?: string;
-        rows: (ImportRow & { excelRow: number; campaignId: number })[];
+        employeeEmail?: string | null;
+        employeePhone?: string | null;
+        shippingAddress?: string | null;
+        shippingCity?: string | null;
+        rows: (typeof rowsWithCampaign[number])[];
       }
     >();
 
@@ -318,9 +445,7 @@ export class ImportsService {
       }
     }
 
-    // ── 6. Process employee groups in batches ───────────────
-    // Split groups into batches to avoid long-running transactions
-    // that exceed the Supabase pooler timeout.
+    // ── 8. Process employee groups in batches ───────────────
     const BATCH_SIZE = 10;
     const BATCH_TIMEOUT = 120000;
     const logger = new Logger('Import');
@@ -335,21 +460,21 @@ export class ImportsService {
     let employeesUpdated = 0;
     let beneficiariesCreated = 0;
     let skippedRows = 0;
-    const warnings: ImportWarning[] = [];
+    const importWarnings: ImportWarning[] = [];
 
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
       const batch = batches[batchIndex];
       logger.log(`batch ${batchIndex + 1}/${batches.length} started (${batch.length} groups)`);
 
       const batchResult = await this.prisma.$transaction(
-        async (tx) => {
+        async (tx: Prisma.TransactionClient) => {
           let ec = 0;
           let eu = 0;
           let bc = 0;
           let sr = 0;
           const w: ImportWarning[] = [];
 
-          // ── 6a. Bulk fetch existing employees for this batch ──
+          // ── 8a. Bulk fetch existing employees for this batch ──
           const campaignIds = [...new Set(batch.map((g) => g.campaignId))];
           const documentIds = [...new Set(batch.map((g) => g.documentId))];
           const existingEmployees = await tx.employee.findMany({
@@ -358,14 +483,13 @@ export class ImportsService {
               documentId: { in: documentIds },
             },
           });
-          const empMap = new Map<string, typeof existingEmployees[number]>();
+          const empMap = new Map<string, (typeof existingEmployees)[number]>();
           for (const emp of existingEmployees) {
             empMap.set(`${emp.campaignId}::${emp.documentId}`, emp);
           }
 
-          // ── 6b. Classify groups and prepare create payload ──
-          type GroupInfo = { group: typeof batch[0]; isConfirmed: boolean };
-          const groupInfos: GroupInfo[] = [];
+          // ── 8b. Classify groups and prepare create payload ──
+          const groupInfos: Array<{ group: (typeof batch)[number]; isConfirmed: boolean }> = [];
           const createPayload: Array<{
             campaignId: number;
             documentId: string;
@@ -438,7 +562,7 @@ export class ImportsService {
             }
           }
 
-          // ── 6c. Batch create new employees ──
+          // ── 8c. Batch create new employees ──
           if (createPayload.length > 0) {
             const createResult = await tx.employee.createMany({
               data: createPayload,
@@ -447,19 +571,19 @@ export class ImportsService {
             ec = createResult.count;
           }
 
-          // ── 6d. Re-fetch batch employees to get IDs ──
+          // ── 8d. Re-fetch batch employees to get IDs ──
           const freshEmployees = await tx.employee.findMany({
             where: {
               campaignId: { in: campaignIds },
               documentId: { in: documentIds },
             },
           });
-          const freshEmpMap = new Map<string, typeof freshEmployees[number]>();
+          const freshEmpMap = new Map<string, (typeof freshEmployees)[number]>();
           for (const emp of freshEmployees) {
             freshEmpMap.set(`${emp.campaignId}::${emp.documentId}`, emp);
           }
 
-          // ── 6e. Apply individual employee updates ──
+          // ── 8e. Apply individual employee updates ──
           for (const action of updateActions) {
             await tx.employee.update({
               where: { id: action.id },
@@ -468,8 +592,7 @@ export class ImportsService {
             eu++;
           }
 
-          // ── 6f. Bulk beneficiary processing ──
-          // Collect employee IDs for non-CONFIRMED groups
+          // ── 8f. Bulk beneficiary processing ──
           const nonConfirmedEmployeeIds: number[] = [];
           for (const { group, isConfirmed } of groupInfos) {
             if (isConfirmed) continue;
@@ -480,7 +603,6 @@ export class ImportsService {
             }
           }
 
-          // One query: fetch all existing beneficiaries for this batch
           const existingBeneficiaries = nonConfirmedEmployeeIds.length > 0
             ? await tx.beneficiary.findMany({
                 where: {
@@ -498,7 +620,6 @@ export class ImportsService {
             );
           }
 
-          // In-memory pass: classify rows, build createMany payload
           const beneficiaryCreatePayload: Array<{
             employeeId: number;
             fullName: string;
@@ -513,8 +634,7 @@ export class ImportsService {
               for (const r of group.rows) {
                 w.push({
                   row: r.excelRow,
-                  message:
-                    'El empleado ya estaba confirmado y no fue actualizado.',
+                  message: 'El empleado ya estaba confirmado y no fue actualizado.',
                 });
                 sr++;
               }
@@ -550,7 +670,7 @@ export class ImportsService {
               beneficiaryCreatePayload.push({
                 employeeId: employee.id,
                 fullName: row.beneficiaryFullName,
-                age: row.beneficiaryAge,
+                age: row.beneficiaryAge as number,
                 gender: row.beneficiaryGender as 'male' | 'female',
                 createdById: adminUserId,
               });
@@ -558,7 +678,6 @@ export class ImportsService {
             }
           }
 
-          // One query: create all new beneficiaries
           if (beneficiaryCreatePayload.length > 0) {
             const benResult = await tx.beneficiary.createMany({
               data: beneficiaryCreatePayload,
@@ -576,19 +695,24 @@ export class ImportsService {
       employeesUpdated += batchResult.eu;
       beneficiariesCreated += batchResult.bc;
       skippedRows += batchResult.sr;
-      warnings.push(...batchResult.w);
+      importWarnings.push(...batchResult.w);
 
       logger.log(`batch ${batchIndex + 1}/${batches.length} completed`);
     }
 
     return {
-      totalRows: rawRows.length,
+      canImport: true,
+      totalRows,
       employeesCreated,
       employeesUpdated,
       beneficiariesCreated,
+      beneficiariesUpdated: 0,
       skippedRows,
-      errors,
-      warnings,
+      errors: [],
+      warnings: importWarnings,
+      issues: [],
+      errorCount: 0,
+      warningCount: importWarnings.length,
     };
   }
 }

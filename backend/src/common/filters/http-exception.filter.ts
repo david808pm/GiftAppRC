@@ -29,20 +29,41 @@ export class HttpExceptionFilter implements ExceptionFilter {
           ? responseBody
           : (responseBody as any).message || exception.message;
     } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
-      // Map common Prisma errors to clean HTTP responses instead of 500.
+      this.logger.error(
+        `${request.method} ${request.url} — Prisma ${exception.code}`,
+        exception.stack,
+      );
+
+      const TRANSIENT_CODES = [
+        'P1001',
+        'P1002',
+        'P1003',
+        'P1008',
+        'P1010',
+        'P1011',
+        'P1012',
+        'P1013',
+        'P1015',
+        'P1017',
+        'P2024',
+      ];
+
       if (exception.code === 'P2002') {
         status = HttpStatus.CONFLICT;
         message = 'Ya existe un registro con estos datos.';
       } else if (exception.code === 'P2025') {
         status = HttpStatus.NOT_FOUND;
         message = 'El registro solicitado no existe.';
-      } else {
+      } else if (['P2003', 'P2007', 'P2014'].includes(exception.code)) {
         status = HttpStatus.BAD_REQUEST;
         message = 'La operación no pudo completarse.';
-        this.logger.error(
-          `${request.method} ${request.url} — Prisma ${exception.code}`,
-          exception.stack,
-        );
+      } else if (TRANSIENT_CODES.includes(exception.code)) {
+        status = HttpStatus.SERVICE_UNAVAILABLE;
+        message =
+          'Servicio no disponible temporalmente. Intenta nuevamente.';
+      } else {
+        status = HttpStatus.INTERNAL_SERVER_ERROR;
+        message = 'Error interno del servidor.';
       }
     } else if (exception instanceof Error) {
       this.logger.error(

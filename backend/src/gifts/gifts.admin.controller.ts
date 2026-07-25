@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Delete,
   Body,
   Param,
@@ -13,12 +14,11 @@ import {
   UseGuards,
   Req,
   UploadedFile,
+  UploadedFiles,
   UseInterceptors,
-  ParseFilePipeBuilder,
-  MaxFileSizeValidator,
-  FileTypeValidator,
+  BadRequestException,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { GiftsService } from './gifts.service';
 import { CreateGiftDto } from './dto/create-gift.dto';
 import { UpdateGiftDto } from './dto/update-gift.dto';
@@ -76,30 +76,64 @@ export class GiftsAdminController {
 
   @Post(':id/images')
   @Roles('SUPER_ADMIN')
-  @UseInterceptors(FileInterceptor('image'))
-  uploadImage(
+  @UseInterceptors(
+    FilesInterceptor('image', 3, {
+      limits: { fileSize: GIFTS_IMAGE_MAX_BYTES },
+    }),
+  )
+  uploadImages(
     @Param('id', ParseIntPipe) id: number,
-    @UploadedFile(
-      new ParseFilePipeBuilder()
-        .addFileTypeValidator({
-          fileType: /(image\/jpeg|image\/png|image\/webp)$/,
-        })
-        .addMaxSizeValidator({
-          maxSize: GIFTS_IMAGE_MAX_BYTES,
-        })
-        .build({
-          errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY,
-        }),
-    )
-    file: Express.Multer.File,
+    @UploadedFiles() files: Express.Multer.File[],
     @Req() req: Request,
   ) {
-    return this.giftsService.uploadImage(
+    return this.giftsService.uploadImages(
       id,
-      file.buffer,
-      file.mimetype,
-      file.originalname,
+      files || [],
       (req.user as any).userId,
     );
+  }
+
+  @Delete(':id/images/:imageId')
+  @Roles('SUPER_ADMIN')
+  @HttpCode(HttpStatus.OK)
+  deleteImage(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('imageId', ParseIntPipe) imageId: number,
+  ) {
+    return this.giftsService.deleteImage(id, imageId);
+  }
+
+  @Delete(':id/images')
+  @Roles('SUPER_ADMIN')
+  @HttpCode(HttpStatus.OK)
+  deleteAllImages(@Param('id', ParseIntPipe) id: number) {
+    return this.giftsService.deleteAllImages(id);
+  }
+
+  @Patch(':id/images/:imageId/primary')
+  @Roles('SUPER_ADMIN')
+  setPrimaryImage(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('imageId', ParseIntPipe) imageId: number,
+  ) {
+    return this.giftsService.setPrimaryImage(id, imageId);
+  }
+
+  @Put(':id/images/:imageId')
+  @Roles('SUPER_ADMIN')
+  @UseInterceptors(
+    FileInterceptor('image', {
+      limits: { fileSize: GIFTS_IMAGE_MAX_BYTES },
+    }),
+  )
+  replaceImage(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('imageId', ParseIntPipe) imageId: number,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Debe enviar un archivo de imagen.');
+    }
+    return this.giftsService.replaceImage(id, imageId, file);
   }
 }

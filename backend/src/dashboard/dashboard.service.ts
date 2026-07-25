@@ -3,6 +3,24 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { DashboardCache } from './dashboard.cache';
 
+function countFromGroup(group: any): number {
+  const c = group?._count;
+  if (typeof c === 'number') return c;
+  if (c && typeof c === 'object' && typeof c._all === 'number') return c._all;
+  return 0;
+}
+
+function sumGroupCounts(groups: any[]): number {
+  return groups.reduce((sum, g) => sum + countFromGroup(g), 0);
+}
+
+function countByField(groups: any[], field: string, values: string | string[]): number {
+  const targets: string[] = Array.isArray(values) ? values : [values];
+  return groups
+    .filter(g => targets.includes(g[field]))
+    .reduce((sum, g) => sum + countFromGroup(g), 0);
+}
+
 @Injectable()
 export class DashboardService {
   private readonly cache = new DashboardCache();
@@ -13,14 +31,13 @@ export class DashboardService {
   async getStats(user?: { role: string; companyId?: number }) {
     const cacheKey = `${user?.role || 'public'}_${user?.companyId || 'all'}`;
     const cached = this.cache.get(cacheKey);
-    
+
     if (cached) {
       this.logger.debug(`Cache hit for key=${cacheKey}`);
       return cached;
     }
 
     this.logger.debug(`Cache miss for key=${cacheKey}, calculating...`);
-    // Build base filters for company scoping and exclude soft-deleted campaigns
     const campaignFilter: Prisma.CampaignWhereInput = { deletedAt: null };
     const employeeFilter: Prisma.EmployeeWhereInput = {
       deletedAt: null,
@@ -49,7 +66,6 @@ export class DashboardService {
       isActive: true,
     };
 
-    // Apply company scoping for COMPANY_VIEWER
     if (user?.role === 'COMPANY_VIEWER') {
       if (!user.companyId) {
         throw new ForbiddenException('No tienes compañía asignada.');
@@ -67,79 +83,47 @@ export class DashboardService {
     }
 
     const [
-      campaignsAll,
-      activeCampaigns,
-      closedCampaigns,
-      draftCampaigns,
-      employeesAll,
-      pendingEmployees,
-      inProgressEmployees,
-      confirmedEmployees,
-      blockedEmployees,
-      beneficiariesAll,
-      giftsAll,
-      activeGifts,
-      inactiveGifts,
-      stockSum,
-      supportAll,
-      openSupport,
-      inReviewSupport,
-      resolvedSupport,
+      campaignGroups,
+      employeeGroups,
+      beneficiaryTotal,
+      giftGroups,
+      stockAggregate,
+      supportGroups,
       confirmedSelections,
       cancelledSelections,
       companiesCount,
     ] = await Promise.all([
-      this.prisma.campaign.count({ where: campaignFilter }),
-      this.prisma.campaign.count({ where: { ...campaignFilter, status: 'ACTIVE' } }),
-      this.prisma.campaign.count({
-        where: {
-          ...campaignFilter,
-          status: { in: ['CLOSED', 'ARCHIVED', 'PAUSED'] },
-        },
-      }),
-      this.prisma.campaign.count({ where: { ...campaignFilter, status: 'DRAFT' } }),
-      this.prisma.employee.count({ where: employeeFilter }),
-      this.prisma.employee.count({ where: { ...employeeFilter, status: 'PENDING' } }),
-      this.prisma.employee.count({ where: { ...employeeFilter, status: 'IN_PROGRESS' } }),
-      this.prisma.employee.count({ where: { ...employeeFilter, status: 'CONFIRMED' } }),
-      this.prisma.employee.count({ where: { ...employeeFilter, status: 'BLOCKED' } }),
+      this.prisma.campaign.groupBy({ by: ['status'], where: campaignFilter, _count: true }),
+      this.prisma.employee.groupBy({ by: ['status'], where: employeeFilter, _count: true }),
       this.prisma.beneficiary.count({ where: beneficiaryFilter }),
-      this.prisma.gift.count({ where: giftFilter }),
-      this.prisma.gift.count({ where: { ...giftFilter, status: 'ACTIVE' } }),
-      this.prisma.gift.count({ where: { ...giftFilter, status: 'INACTIVE' } }),
-      this.prisma.gift.aggregate({
-        where: giftFilter,
-        _sum: { stock: true },
-      }),
-      this.prisma.supportRequest.count({ where: supportFilter }),
-      this.prisma.supportRequest.count({ where: { ...supportFilter, status: 'OPEN' } }),
-      this.prisma.supportRequest.count({ where: { ...supportFilter, status: 'IN_REVIEW' } }),
-      this.prisma.supportRequest.count({ where: { ...supportFilter, status: 'RESOLVED' } }),
+      this.prisma.gift.groupBy({ by: ['status'], where: giftFilter, _count: true }),
+      this.prisma.gift.aggregate({ where: giftFilter, _sum: { stock: true } }),
+      this.prisma.supportRequest.groupBy({ by: ['status'], where: supportFilter, _count: true }),
       this.prisma.selectionItem.count({ where: { selection: { ...selectionFilter, status: 'CONFIRMED' } } }),
       this.prisma.selection.count({ where: { ...selectionFilter, status: 'CANCELLED' } }),
       this.prisma.company.count({ where: companyFilter }),
     ]);
 
     const result = {
-      campaigns: campaignsAll,
-      activeCampaigns,
-      closedCampaigns,
-      draftCampaigns,
+      campaigns: sumGroupCounts(campaignGroups),
+      activeCampaigns: countByField(campaignGroups, 'status', 'ACTIVE'),
+      closedCampaigns: countByField(campaignGroups, 'status', ['CLOSED', 'ARCHIVED', 'PAUSED']),
+      draftCampaigns: countByField(campaignGroups, 'status', 'DRAFT'),
       companies: companiesCount,
-      employees: employeesAll,
-      pendingEmployees,
-      inProgressEmployees,
-      confirmedEmployees,
-      blockedEmployees,
-      beneficiaries: beneficiariesAll,
-      gifts: giftsAll,
-      activeGifts,
-      inactiveGifts,
-      stock: stockSum._sum.stock || 0,
-      supportRequests: supportAll,
-      openSupportRequests: openSupport,
-      inReviewSupportRequests: inReviewSupport,
-      resolvedSupportRequests: resolvedSupport,
+      employees: sumGroupCounts(employeeGroups),
+      pendingEmployees: countByField(employeeGroups, 'status', 'PENDING'),
+      inProgressEmployees: countByField(employeeGroups, 'status', 'IN_PROGRESS'),
+      confirmedEmployees: countByField(employeeGroups, 'status', 'CONFIRMED'),
+      blockedEmployees: countByField(employeeGroups, 'status', 'BLOCKED'),
+      beneficiaries: beneficiaryTotal,
+      gifts: sumGroupCounts(giftGroups),
+      activeGifts: countByField(giftGroups, 'status', 'ACTIVE'),
+      inactiveGifts: countByField(giftGroups, 'status', 'INACTIVE'),
+      stock: stockAggregate._sum.stock || 0,
+      supportRequests: sumGroupCounts(supportGroups),
+      openSupportRequests: countByField(supportGroups, 'status', 'OPEN'),
+      inReviewSupportRequests: countByField(supportGroups, 'status', 'IN_REVIEW'),
+      resolvedSupportRequests: countByField(supportGroups, 'status', 'RESOLVED'),
       selections: confirmedSelections,
       cancelledSelections,
     };
