@@ -1,4 +1,5 @@
 import { Injectable, Logger, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { requireEnv } from '../config/env';
 

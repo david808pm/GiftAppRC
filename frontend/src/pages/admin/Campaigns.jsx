@@ -8,11 +8,13 @@ import {
   giftAppUpdateCampaign,
   giftAppDeleteCampaign,
   giftAppUploadCampaignLogo,
+  giftAppUploadCampaignBanner,
   giftAppGetCompanies,
   giftAppCreateCompany,
   USE_BACKEND,
 } from '../../api/giftAppService';
 import Modal from '../../components/Modal';
+import BannerEditor from '../../components/BannerEditor';
 import Toast, { useToast } from '../../components/Toast';
 import EmptyState from '../../components/EmptyState';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -53,6 +55,8 @@ export default function Campaigns() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [logoFile, setLogoFile] = useState(null);
+  const [bannerFile, setBannerFile] = useState(null);
+  const [bannerDecorationText, setBannerDecorationText] = useState('');
 
   const loadCampaigns = async () => {
     if (USE_BACKEND) setLoading(true);
@@ -88,6 +92,8 @@ export default function Campaigns() {
     setForm({ ...EMPTY_CAMPAIGN, companyId: companies[0]?.id || '' });
     setErrors({});
     setLogoFile(null);
+    setBannerFile(null);
+    setBannerDecorationText('');
     setShowModal(true);
   };
 
@@ -105,6 +111,8 @@ export default function Campaigns() {
     });
     setErrors({});
     setLogoFile(null);
+    setBannerFile(null);
+    setBannerDecorationText(campaign.bannerDecoration ? JSON.stringify(campaign.bannerDecoration, null, 2) : '');
     setShowModal(true);
   };
 
@@ -164,6 +172,17 @@ export default function Campaigns() {
       const campaignId = result?.id || editing?.id;
       if (USE_BACKEND && logoFile && campaignId) {
         await giftAppUploadCampaignLogo(campaignId, logoFile);
+      }
+      if (USE_BACKEND && bannerFile && campaignId) {
+        await giftAppUploadCampaignBanner(campaignId, bannerFile);
+      }
+      if (USE_BACKEND && bannerDecorationText && campaignId) {
+        try {
+          const parsed = JSON.parse(bannerDecorationText);
+          await giftAppUpdateCampaign(campaignId, { bannerDecoration: parsed });
+        } catch (err) {
+          addToast('JSON inválido para bannerDecoration.', 'error');
+        }
       }
 
       await loadCampaigns();
@@ -399,6 +418,27 @@ export default function Campaigns() {
             onChange={(e) => updateField('welcomeText', e.target.value)}
           />
         </div>
+        {editing && (
+          <div className="form-group">
+            <label>Banner (imagen prediseñada)</label>
+            <input type="file" accept="image/*" onChange={(e) => setBannerFile(e.target.files?.[0] || null)} />
+            {editing.bannerImageUrl && (
+              <div style={{ marginTop: 8 }}>
+                <img src={editing.bannerImageUrl} alt="banner" style={{ maxWidth: '100%', height: 'auto' }} />
+              </div>
+            )}
+          </div>
+        )}
+        {editing && (
+          <div className="form-group">
+            <label>Editor de Banner</label>
+            <BannerEditor
+              bannerImageUrl={editing.bannerImageUrl}
+              initialDecoration={editing.bannerDecoration}
+              onChange={(dec) => setBannerDecorationText(JSON.stringify(dec, null, 2))}
+            />
+          </div>
+        )}
         <div className="form-group">
           <label>Texto de Reglas</label>
           <textarea

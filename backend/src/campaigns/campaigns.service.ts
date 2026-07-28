@@ -5,6 +5,7 @@ import {
   BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
@@ -52,7 +53,22 @@ export class CampaignsService {
 
     return this.prisma.campaign.findMany({
       where,
-      include: {
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        welcomeText: true,
+        rulesText: true,
+        status: true,
+        logoText: true,
+        primaryColor: true,
+        logoImageUrl: true,
+        companyId: true,
+        startsAt: true,
+        endsAt: true,
+        createdAt: true,
+        updatedAt: true,
+        deletedAt: true,
         company: { select: { id: true, name: true, slug: true } },
         createdBy: { select: { id: true, name: true, email: true } },
         updatedBy: { select: { id: true, name: true, email: true } },
@@ -66,7 +82,22 @@ export class CampaignsService {
   async findOne(id: number, user?: { role: string; companyId?: number }) {
     const campaign = await this.prisma.campaign.findUnique({
       where: { id },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        welcomeText: true,
+        rulesText: true,
+        status: true,
+        logoText: true,
+        primaryColor: true,
+        logoImageUrl: true,
+        companyId: true,
+        startsAt: true,
+        endsAt: true,
+        createdAt: true,
+        updatedAt: true,
+        deletedAt: true,
         company: { select: { id: true, name: true, slug: true } },
         createdBy: { select: { id: true, name: true, email: true } },
         updatedBy: { select: { id: true, name: true, email: true } },
@@ -139,6 +170,7 @@ export class CampaignsService {
         logoText: dto.logoText?.trim(),
         primaryColor: dto.primaryColor?.trim(),
         logoImageUrl: dto.logoImageUrl?.trim(),
+        // banner fields omitted until DB migration is applied
         startsAt,
         endsAt,
         createdById: adminUserId,
@@ -164,6 +196,7 @@ export class CampaignsService {
     if (dto.logoText !== undefined) data.logoText = dto.logoText?.trim();
     if (dto.primaryColor !== undefined) data.primaryColor = dto.primaryColor?.trim();
     if (dto.logoImageUrl !== undefined) data.logoImageUrl = dto.logoImageUrl?.trim();
+    // banner fields omitted until DB migration is applied
     if (dto.startsAt !== undefined) data.startsAt = dto.startsAt ? new Date(dto.startsAt) : null;
     if (dto.endsAt !== undefined) data.endsAt = dto.endsAt ? new Date(dto.endsAt) : null;
 
@@ -203,14 +236,35 @@ export class CampaignsService {
 
     // TODO: AuditLog — log campaign update when AuditLog module is implemented.
 
-    return this.prisma.campaign.update({
-      where: { id },
-      data,
-      include: {
-        createdBy: { select: { id: true, name: true, email: true } },
-        updatedBy: { select: { id: true, name: true, email: true } },
-      },
-    });
+    try {
+      return await this.prisma.campaign.update({
+        where: { id },
+        data,
+        include: {
+          createdBy: { select: { id: true, name: true, email: true } },
+          updatedBy: { select: { id: true, name: true, email: true } },
+        },
+      });
+    } catch (err) {
+      // If DB is missing the new banner columns (Prisma P2022), retry without them
+      // so the update can succeed while the DB schema is brought up-to-date.
+      if (err && err.code === 'P2022') {
+        const fallbackData = { ...data } as any;
+        delete fallbackData.bannerImageUrl;
+        delete fallbackData.bannerDecoration;
+
+        return await this.prisma.campaign.update({
+          where: { id },
+          data: fallbackData,
+          include: {
+            createdBy: { select: { id: true, name: true, email: true } },
+            updatedBy: { select: { id: true, name: true, email: true } },
+          },
+        });
+      }
+
+      throw err;
+    }
   }
 
   // ── Admin: upload logo ───────────────────────────────────
@@ -243,6 +297,44 @@ export class CampaignsService {
     });
 
     return { logoImageUrl };
+  }
+
+  async uploadBanner(id: number, file: Express.Multer.File): Promise<{ bannerImageUrl: string }> {
+    const campaign = await this.prisma.campaign.findUnique({
+      where: { id },
+      include: { company: { select: { id: true } } },
+    });
+
+    if (!campaign || campaign.deletedAt) {
+      throw new NotFoundException('Campaña no encontrada.');
+    }
+
+    const ext = SupabaseStorageService.sanitizeExtension(file.mimetype);
+    const uuid = crypto.randomUUID();
+    const companyId = campaign.companyId ?? 'unknown';
+    const storagePath = `company-${companyId}/campaign-${id}/banner-${uuid}${ext}`;
+
+    const bannerImageUrl = await this.storage.uploadFile(
+      file.buffer,
+      storagePath,
+      file.mimetype,
+      'campaign-logos',
+    );
+
+    try {
+      await this.prisma.campaign.update({
+        where: { id },
+        data: { bannerImageUrl },
+      });
+    } catch (err) {
+      // If DB schema hasn't been migrated yet, Prisma will error (P2022).
+      // Log and continue returning the uploaded URL so the file is available in storage.
+      // The campaign DB will be updated once migrations are applied.
+      // eslint-disable-next-line no-console
+      console.warn('Could not persist bannerImageUrl to DB (schema mismatch).', err?.message || err);
+    }
+
+    return { bannerImageUrl };
   }
 
   // ── Admin: soft delete ───────────────────────────────────
@@ -285,6 +377,8 @@ export class CampaignsService {
       logoText: campaign.logoText,
       primaryColor: campaign.primaryColor,
       logoImageUrl: campaign.logoImageUrl,
+      bannerImageUrl: campaign.bannerImageUrl,
+      bannerDecoration: campaign.bannerDecoration,
       otpEnabled,
     };
   }

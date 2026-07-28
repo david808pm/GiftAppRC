@@ -87,6 +87,8 @@ model Campaign {
   logoText      String?         @db.VarChar(80)
   primaryColor  String?         @db.VarChar(7)
   logoImageUrl  String?         @db.VarChar(500)
+  bannerImageUrl String?        @db.VarChar(500)
+  bannerDecoration Json?
   companyId     Int?
   company       Company?        @relation(fields: [companyId], references: [id])
   startsAt      DateTime?

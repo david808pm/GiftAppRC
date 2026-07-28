@@ -82,8 +82,56 @@ export default function CampaignWelcome() {
   return (
     <div className="welcome-page" style={{ '--primary': campaign.primaryColor || '#2563eb' }}>
       <div className="welcome-card">
-        {campaign.logoImageUrl && (
-          <img src={campaign.logoImageUrl} alt={campaign.logoText || campaign.name} style={{ maxHeight: 80, maxWidth: 200, marginBottom: 16, objectFit: 'contain' }} />
+        {campaign.bannerImageUrl ? (
+          <div style={{ position: 'relative', width: '100%', marginBottom: 16 }}>
+            <img src={campaign.bannerImageUrl} alt="banner" style={{ width: '100%', height: 'auto', display: 'block' }} />
+            {/* Render simple decoration layers if provided */}
+            {(campaign.bannerDecoration?.layers || []).map((layer, idx) => {
+              if (layer.type === 'overlay' && layer.imageUrl) {
+                const style = { position: 'absolute', pointerEvents: 'none' };
+                if (layer.position === 'center') {
+                  style.left = '50%';
+                  style.top = '50%';
+                  style.transform = 'translate(-50%,-50%)';
+                } else if (layer.position === 'top-left') {
+                  style.left = layer.x ?? 0;
+                  style.top = layer.y ?? 0;
+                } else if (layer.position === 'bottom-right') {
+                  style.right = layer.x ?? 0;
+                  style.bottom = layer.y ?? 0;
+                } else if (layer.position === 'top-right') {
+                  style.right = layer.x ?? 0;
+                  style.top = layer.y ?? 0;
+                }
+                if (layer.width) style.width = layer.width;
+                if (layer.opacity !== undefined) style.opacity = layer.opacity;
+                return (
+                  <img key={idx} src={layer.imageUrl} alt="overlay" style={style} />
+                );
+              }
+              if (layer.type === 'text') {
+                const style = { position: 'absolute', color: layer.color || '#fff', fontSize: layer.fontSize || 24, fontWeight: layer.fontWeight || 700 };
+                if (layer.position === 'center') {
+                  style.left = '50%';
+                  style.top = layer.y ?? '50%';
+                  style.transform = 'translate(-50%,-50%)';
+                  style.textAlign = 'center';
+                  style.width = '100%';
+                } else {
+                  style.left = layer.x ?? 0;
+                  style.top = layer.y ?? 0;
+                }
+                return (
+                  <div key={idx} style={style}>{layer.text}</div>
+                );
+              }
+              return null;
+            })}
+          </div>
+        ) : (
+          campaign.logoImageUrl && (
+            <img src={campaign.logoImageUrl} alt={campaign.logoText || campaign.name} style={{ maxHeight: 80, maxWidth: 200, marginBottom: 16, objectFit: 'contain' }} />
+          )
         )}
         <div className="logo-text">{campaign.logoText || 'REGALOS'}</div>
         <h1>{campaign.name}</h1>
