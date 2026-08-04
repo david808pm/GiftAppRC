@@ -37,6 +37,16 @@ export class CreateCampaignDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(500)
+  bannerImageUrl?: string;
+
+  // JSON-friendly configuration for decoration layers (optional).
+  // Stored as JSON in the DB; the frontend may send an object or a JSON string.
+  @IsOptional()
+  bannerDecoration?: any;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(5000)
   rulesText?: string;
 

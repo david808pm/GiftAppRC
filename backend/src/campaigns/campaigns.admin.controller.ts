@@ -29,6 +29,9 @@ import { Request } from 'express';
 const ALLOWED_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
 
+const ALLOWED_BANNER_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+const MAX_BANNER_SIZE = 5 * 1024 * 1024; // allow larger banners
+
 /**
  * Verifies the file's real binary signature (magic bytes) matches an allowed
  * image type. The client-supplied mimetype can be spoofed, so this is the
@@ -129,5 +132,33 @@ export class CampaignsAdminController {
       );
     }
     return this.campaignsService.uploadLogo(id, file);
+  }
+
+  @Post(':id/banner')
+  @Roles('SUPER_ADMIN')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: MAX_BANNER_SIZE } }),
+  )
+  async uploadBanner(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('El archivo de banner es obligatorio.');
+    }
+    if (!ALLOWED_BANNER_TYPES.includes(file.mimetype)) {
+      throw new BadRequestException(
+        'Formato de imagen no permitido. Usa PNG, JPEG, JPG o WebP.',
+      );
+    }
+    if (file.size > MAX_BANNER_SIZE) {
+      throw new BadRequestException('El banner no puede superar los 5MB.');
+    }
+    if (!hasValidImageSignature(file.buffer)) {
+      throw new BadRequestException(
+        'El archivo no es una imagen válida (PNG, JPEG o WebP).',
+      );
+    }
+    return this.campaignsService.uploadBanner(id, file);
   }
 }

@@ -214,6 +214,14 @@ export async function giftAppUploadCampaignLogo(campaignId, file) {
   throw new Error('La carga de logo solo está disponible en modo backend.');
 }
 
+export async function giftAppUploadCampaignBanner(campaignId, file) {
+  if (USE_BACKEND) {
+    const { uploadCampaignBanner } = await getBackendAuth();
+    return await uploadCampaignBanner(campaignId, file);
+  }
+  throw new Error('La carga de banner solo está disponible en modo backend.');
+}
+
 // ═══════════════════════════════════════════════════════════
 // Employees
 // ═══════════════════════════════════════════════════════════
