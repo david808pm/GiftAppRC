@@ -63,6 +63,8 @@ export class CampaignsService {
         logoText: true,
         primaryColor: true,
         logoImageUrl: true,
+        bannerImageUrl: true,
+        bannerDecoration: true,
         companyId: true,
         startsAt: true,
         endsAt: true,
@@ -92,6 +94,8 @@ export class CampaignsService {
         logoText: true,
         primaryColor: true,
         logoImageUrl: true,
+        bannerImageUrl: true,
+        bannerDecoration: true,
         companyId: true,
         startsAt: true,
         endsAt: true,
@@ -170,7 +174,12 @@ export class CampaignsService {
         logoText: dto.logoText?.trim(),
         primaryColor: dto.primaryColor?.trim(),
         logoImageUrl: dto.logoImageUrl?.trim(),
-        // banner fields omitted until DB migration is applied
+        ...(dto.bannerImageUrl !== undefined
+          ? { bannerImageUrl: dto.bannerImageUrl?.trim() }
+          : {}),
+        ...(dto.bannerDecoration !== undefined
+          ? { bannerDecoration: dto.bannerDecoration }
+          : {}),
         startsAt,
         endsAt,
         createdById: adminUserId,
@@ -196,7 +205,8 @@ export class CampaignsService {
     if (dto.logoText !== undefined) data.logoText = dto.logoText?.trim();
     if (dto.primaryColor !== undefined) data.primaryColor = dto.primaryColor?.trim();
     if (dto.logoImageUrl !== undefined) data.logoImageUrl = dto.logoImageUrl?.trim();
-    // banner fields omitted until DB migration is applied
+    if (dto.bannerImageUrl !== undefined) data.bannerImageUrl = dto.bannerImageUrl?.trim();
+    if (dto.bannerDecoration !== undefined) data.bannerDecoration = dto.bannerDecoration;
     if (dto.startsAt !== undefined) data.startsAt = dto.startsAt ? new Date(dto.startsAt) : null;
     if (dto.endsAt !== undefined) data.endsAt = dto.endsAt ? new Date(dto.endsAt) : null;
 
@@ -236,35 +246,14 @@ export class CampaignsService {
 
     // TODO: AuditLog — log campaign update when AuditLog module is implemented.
 
-    try {
-      return await this.prisma.campaign.update({
-        where: { id },
-        data,
-        include: {
-          createdBy: { select: { id: true, name: true, email: true } },
-          updatedBy: { select: { id: true, name: true, email: true } },
-        },
-      });
-    } catch (err) {
-      // If DB is missing the new banner columns (Prisma P2022), retry without them
-      // so the update can succeed while the DB schema is brought up-to-date.
-      if (err && err.code === 'P2022') {
-        const fallbackData = { ...data } as any;
-        delete fallbackData.bannerImageUrl;
-        delete fallbackData.bannerDecoration;
-
-        return await this.prisma.campaign.update({
-          where: { id },
-          data: fallbackData,
-          include: {
-            createdBy: { select: { id: true, name: true, email: true } },
-            updatedBy: { select: { id: true, name: true, email: true } },
-          },
-        });
-      }
-
-      throw err;
-    }
+    return await this.prisma.campaign.update({
+      where: { id },
+      data,
+      include: {
+        createdBy: { select: { id: true, name: true, email: true } },
+        updatedBy: { select: { id: true, name: true, email: true } },
+      },
+    });
   }
 
   // ── Admin: upload logo ───────────────────────────────────
@@ -327,11 +316,11 @@ export class CampaignsService {
         data: { bannerImageUrl },
       });
     } catch (err) {
-      // If DB schema hasn't been migrated yet, Prisma will error (P2022).
-      // Log and continue returning the uploaded URL so the file is available in storage.
-      // The campaign DB will be updated once migrations are applied.
-      // eslint-disable-next-line no-console
-      console.warn('Could not persist bannerImageUrl to DB (schema mismatch).', err?.message || err);
+      // Best-effort cleanup: remove the newly uploaded object so no orphan
+      // file is left in Storage. The prior campaign state is preserved
+      // because the update never succeeded.
+      await this.storage.deleteFile(storagePath, 'campaign-logos');
+      throw err;
     }
 
     return { bannerImageUrl };

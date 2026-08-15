@@ -142,6 +142,12 @@ export async function giftAppCreateCampaign(data) {
       logoText: data.logoText,
       primaryColor: data.primaryColor,
     };
+    if (data.bannerImageUrl !== undefined) {
+      payload.bannerImageUrl = data.bannerImageUrl;
+    }
+    if (data.bannerDecoration !== undefined) {
+      payload.bannerDecoration = data.bannerDecoration;
+    }
     return await createCampaign(payload);
   }
 
@@ -164,6 +170,12 @@ export async function giftAppUpdateCampaign(id, data) {
       logoText: data.logoText,
       primaryColor: data.primaryColor,
     };
+    if (data.bannerImageUrl !== undefined) {
+      payload.bannerImageUrl = data.bannerImageUrl;
+    }
+    if (data.bannerDecoration !== undefined) {
+      payload.bannerDecoration = data.bannerDecoration;
+    }
     const result = await updateCampaign(id, payload);
     if (result?.slug) {
       clearCache(`campaign_${result.slug}`);

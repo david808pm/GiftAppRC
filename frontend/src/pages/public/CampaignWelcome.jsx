@@ -83,7 +83,7 @@ export default function CampaignWelcome() {
     <div className="welcome-page" style={{ '--primary': campaign.primaryColor || '#2563eb' }}>
       <div className="welcome-card">
         {campaign.bannerImageUrl ? (
-          <div style={{ position: 'relative', width: '100%', marginBottom: 16 }}>
+          <div className="welcome-banner" style={{ position: 'relative', width: '100%' }}>
             <img src={campaign.bannerImageUrl} alt="banner" style={{ width: '100%', height: 'auto', display: 'block' }} />
             {/* Render simple decoration layers if provided */}
             {(campaign.bannerDecoration?.layers || []).map((layer, idx) => {
@@ -129,19 +129,21 @@ export default function CampaignWelcome() {
             })}
           </div>
         ) : (
-          campaign.logoImageUrl && (
-            <img src={campaign.logoImageUrl} alt={campaign.logoText || campaign.name} style={{ maxHeight: 80, maxWidth: 200, marginBottom: 16, objectFit: 'contain' }} />
+            campaign.logoImageUrl && (
+              <img src={campaign.logoImageUrl} alt={campaign.logoText || campaign.name} style={{ maxHeight: 80, maxWidth: 200, marginBottom: 16, objectFit: 'contain' }} />
           )
         )}
-        <div className="logo-text">{campaign.logoText || 'REGALOS'}</div>
-        <h1>{campaign.name}</h1>
-        <p>{campaign.welcomeText || '¡Bienvenido a la selección de regalos!'}</p>
-        <button
-          className="btn btn-primary btn-lg"
-          onClick={() => navigate(`/campaign/${slug}/login`)}
-        >
-          Iniciar Selección
-        </button>
+        <div className="welcome-copy">
+          <div className="logo-text">{campaign.logoText || 'REGALOS'}</div>
+          <h1>{campaign.name}</h1>
+          <p>{campaign.welcomeText || '¡Bienvenido a la selección de regalos!'}</p>
+          <button
+            className="btn btn-primary btn-lg"
+            onClick={() => navigate(`/campaign/${slug}/login`)}
+          >
+            Iniciar Selección
+          </button>
+        </div>
       </div>
     </div>
   );

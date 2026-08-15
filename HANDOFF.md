@@ -81,6 +81,7 @@ mimo-regalostestv4/
 │   │   │   ├── giftAppService.js          # [MODIFICADO] Con cache frontend + params opcionales en getEmployees/getBeneficiaries
 │   │   │   └── localStorageService.js     # Modo demo/localStorage
 │   │   ├── components/
+│   │   │   ├── BannerEditor.jsx             # [MODIFICADO] Editor de banner controlado (create + edit)
 │   │   │   ├── ConfirmDialog.jsx
 │   │   │   ├── EmptyState.jsx
 │   │   │   ├── GiftDetailModal.jsx
@@ -94,7 +95,7 @@ mimo-regalostestv4/
 │   │   │   │   ├── AdminLogin.jsx
 │   │   │   │   ├── AdminUsers.jsx
 │   │   │   │   ├── BeneficiariesAdmin.jsx  # [MODIFICADO] Paginación server-side
-│   │   │   │   ├── Campaigns.jsx              # [MODIFICADO] Fix preview slug duplicado
+│   │   │   │   ├── Campaigns.jsx              # [MODIFICADO] Fix preview slug duplicado + [Sesión 30] Banner completo en create/edit
 │   │   │   │   ├── Employees.jsx          # [MODIFICADO] Paginación server-side + UX importación + reporte issues de validación
 │   │   │   │   ├── Gifts.jsx
 │   │   │   │   ├── Selections.jsx
@@ -549,11 +550,11 @@ cd backend
 ## 9. Estado Actual de Git
 
 ```
-Branch: main
-Last commit: e2e2520 "Fase1"
+Branch: versionD
+Last commit: 9991fe5 "Merge pull request #5 from david808pm/version"
 
-Changes not staged (sesiones previas + sesiones 3, 4, 6, 8, 13-14 y 23 de julio):
-   - backend/src/campaigns/campaigns.service.ts                    (fix slug duplicado + otpEnabled en findBySlug)
+Changes not staged (sesiones previas + sesiones 3, 4, 6, 8, 13-14 y 23 de julio + Sesión 30):
+   - backend/src/campaigns/campaigns.service.ts                    (fix slug duplicado + otpEnabled en findBySlug + Sesión 30: persistencia banner en create/update, selects con bannerImageUrl/bannerDecoration, P2022 fallback eliminado, limpieza compensatoria en uploadBanner)
    - backend/src/imports/imports.service.ts                        (Sesión 23b julio: validación completa pre-write + regla atómica; anterior: bulk employee + beneficiary optimization)
    - backend/src/prisma/prisma.service.ts                          (sin cambios funcionales)
    - backend/src/public-selection/public-selection.service.ts       (DATA-01: fix StockMovement stale previousStock)
@@ -592,7 +593,9 @@ Changes not staged (sesiones previas + sesiones 3, 4, 6, 8, 13-14 y 23 de julio)
    - frontend/src/pages/admin/Gifts.jsx                            (multi-image input, previews, count display)
    - frontend/src/pages/admin/AdminLayout.jsx                      (BUG-09: estado error transitorio)
    - frontend/src/pages/admin/AdminUsers.jsx                       (BUG-01: company dropdown fix + Sesión 23 julio: delete button, ConfirmDialog, handler)
-   - frontend/src/pages/admin/Campaigns.jsx                        (fix preview slug + BUG-07)
+   - frontend/src/pages/admin/Campaigns.jsx                        (fix preview slug + BUG-07 + Sesión 30: banner en create/edit, estado canónico, preview blob, cache clear)
+   - frontend/src/components/BannerEditor.jsx                      (Sesión 30: refactor a controlado — sin useEffects de sincronización)
+   - frontend/src/api/giftAppService.js                            (Sesión 30: bannerImageUrl/bannerDecoration en payloads create/update)
    - frontend/src/pages/admin/Selections.jsx                       (FE-05: export error toast)
    - frontend/src/pages/admin/Employees.jsx                        (paginación server-side + export Excel empleados + UX guard BLOCKED + Sesión 23b julio: reporte de issues de validación con canImport banner)
    - frontend/src/pages/admin/BeneficiariesAdmin.jsx               (paginación server-side)
@@ -640,6 +643,8 @@ Untracked files:
     - backend/src/imports/import-validation.ts                      # [NUEVO] Sesión 23b julio: capa de validación pura
     - backend/src/imports/imports-validation.spec.ts               # [NUEVO] Sesión 23b julio: 33 tests de validadores puros
     - backend/src/imports/imports-atomic.spec.ts                    # [NUEVO] Sesión 23b julio: 8 tests de regla atómica
+    - backend/src/campaigns/campaigns-banner.spec.ts               # [NUEVO] Sesión 30: 11 tests de persistencia de banner
+    - backend/prisma/migrations/20260804000000_add_campaign_banner_fields/migration.sql # [NUEVO] Sesión 30: ALTER TABLE idempotente (IF NOT EXISTS)
     - backend/test/mocks/prisma.factory.ts                       # [NUEVO] P2D
     - backend/src/health/health.module.ts                        # [NUEVO] Phase A
     - backend/src/health/health.controller.ts                    # [NUEVO] Phase A
@@ -835,8 +840,8 @@ Columnas: `campaignSlug`, `employeeDocumentId`, `employeeFullName`, `employeeEma
 - **Proyecto original:** mimo-regalostestv7/mimo-regalostestv4
 - **Versión anterior de referencia:** mimo-regalostestv4 (dentro del mismo directorio)
 - **Informe de auditoría:** `Informe_Auditoria_mimo-regalos.docx`
-- **Fecha de última sesión:** 23 de julio de 2026
-- **Sesiones previas:** 6 fases de optimización de rendimiento + migración a us-east-1 + fix slug duplicado + bulk employee/beneficiary + employees/beneficiaries pagination + auditoría completa + 14 fixes de bugs funcionales/datos/caché/frontend + BUG-09 fix logout + Email OTP público con Resend (request-code, verify-code, anti-enumeración, lockout, rollback) + Gift images multi-file upload (hasta 3 imágenes por regalo, FilesInterceptor, parallel Supabase upload) + Health/version endpoints (Phase A) + Structured performance timing (Phase B) + Reproducible benchmark + layered latency diagnosis (Phases C/D) + Auth/me query optimization (Phase E) + Dashboard query consolidation with groupBy (Phase F, 21→9 queries) + Employee Excel export + authorization scoping (Phase G) + Admin User Deletion (SUPER_ADMIN delete COMPANY_VIEWER, atomic deleteMany role filter, 16 tests) + Excel Import Validation Hardening (regla atómica, capa de validación pura, códigos estables, cross-row detection, 41 tests)
+- **Fecha de última sesión:** 4 de agosto de 2026
+- **Sesiones previas:** 6 fases de optimización de rendimiento + migración a us-east-1 + fix slug duplicado + bulk employee/beneficiary + employees/beneficiaries pagination + auditoría completa + 14 fixes de bugs funcionales/datos/caché/frontend + BUG-09 fix logout + Email OTP público con Resend (request-code, verify-code, anti-enumeración, lockout, rollback) + Gift images multi-file upload (hasta 3 imágenes por regalo, FilesInterceptor, parallel Supabase upload) + Health/version endpoints (Phase A) + Structured performance timing (Phase B) + Reproducible benchmark + layered latency diagnosis (Phases C/D) + Auth/me query optimization (Phase E) + Dashboard query consolidation with groupBy (Phase F, 21→9 queries) + Employee Excel export + authorization scoping (Phase G) + Admin User Deletion (SUPER_ADMIN delete COMPANY_VIEWER, atomic deleteMany role filter, 16 tests) + Excel Import Validation Hardening (regla atómica, capa de validación pura, códigos estables, cross-row detection, 41 tests) + Campaign Banner en Create Mode (Sesión 30: persistencia completa de bannerImageUrl/bannerDecoration en create/update, selects admin, migración idempotente, BannerEditor controlado, limpieza compensatoria en uploadBanner, bucket campaign-logos creado en Supabase)
 - **Supabase us-east-1:** Proyecto `uqxvrmcxumqnllaobrlh` en Virginia del Norte
 - **Resend:** API key restringida a envío de emails. Cuenta: david808pm@hotmail.com. EMAIL_FROM temporal: `onboarding@resend.dev` (solo envía al dueño de la cuenta). Para producción: verificar dominio en resend.com/domains.
 - **Empresas creadas:** Default Company, Nutresa, Coca-Cola, Tigo, EMP, Novaventa, TestCacheCompany (esta última creada durante verificación de CACHE-02)
@@ -2496,3 +2501,109 @@ Construye `.xlsx` reales en memoria con ExcelJS:
 - Paquetes adicionales (ExcelJS ya estaba en el proyecto)
 - Cambios al schema de Prisma
 - Reglas inventadas de conteo de dígitos de teléfono (auditadas y documentadas)
+
+---
+
+## 30. Sesión 4 de agosto de 2026 — Campaign Banner en Create Mode (Sesión 30)
+
+El banner de campaña ahora está disponible tanto al **crear** como al **editar** una campaña, con persistencia completa del banner y su decoración en un solo flujo continuo (crear campaña → seleccionar banner → configurar capas → vista previa → guardar).
+
+### 30.1 Diagnóstico previo (verificado en runtime y DB live)
+
+| Hallazgo | Detalle |
+|----------|---------|
+| Columnas `bannerImageUrl` / `bannerDecoration` existían en la DB live pero **no había migración** (se agregaron ad-hoc con `scripts/set-banner-by-id.js`) | Migración creada e idempotente |
+| `create()`/`update()` de CampaignsService **omitían** los campos banner ("omitted until DB migration is applied") | Ahora los persisten |
+| `findAll()`/`findOne()` **no seleccionaban** banner fields → el formulario de edición no recibía banner/decoración | Agregados al `select` |
+| `giftAppCreateCampaign`/`giftAppUpdateCampaign` **descartaban** `bannerImageUrl`/`bannerDecoration` del payload | Whitelist ampliada |
+| `Campaigns.jsx` solo renderizaba controles de banner con `{editing && ...}` | Controles en ambos modos |
+| `uploadBanner` tragaba errores de persistencia (schema mismatch) y retornaba la URL igual | Limpieza compensatoria + rethrow |
+| Fallback P2022 en `update()` retiraba campos banner en caso de error real | Eliminado |
+| Bucket Supabase `campaign-logos` **no existía** (solo `gift-images`) → todo upload de banner fallaba con 500 "Bucket not found" | Bucket creado (public) via service role |
+| `bannerDecoration` de campaña 7 (script) tenía decoración `null` → la persistencia de decoración **nunca funcionó** en ningún modo | Corregido |
+
+### 30.2 Backend
+
+**Archivo:** `backend/src/campaigns/campaigns.service.ts`
+
+- `create()`: persiste `bannerImageUrl` (trimmed) y `bannerDecoration` (objeto) cuando vienen en el DTO (spread condicional).
+- `update()`: `if (dto.bannerImageUrl !== undefined) data.bannerImageUrl = ...` y `if (dto.bannerDecoration !== undefined) data.bannerDecoration = dto.bannerDecoration;` — permite limpiar la decoración con `null`.
+- `findAll()` / `findOne()`: `bannerImageUrl: true, bannerDecoration: true` añadidos al `select`.
+- **Fallback P2022 eliminado** de `update()`: ya no se reintenta la actualización sin campos banner (no se ocultan errores de schema; la DB está migrada).
+- `uploadBanner()`: si la subida a Supabase funciona pero el update de DB falla → `storage.deleteFile(storagePath, 'campaign-logos')` (best-effort) + **rethrow del error original**. Nunca se retorna una URL de banner sin persistencia en DB. El estado previo de la campaña queda intacto.
+
+**DTOs:** sin cambios (`create-campaign.dto.ts` ya tenía `bannerImageUrl` y `bannerDecoration`).
+
+**Migración nueva:** `backend/prisma/migrations/20260804000000_add_campaign_banner_fields/migration.sql`
+```sql
+ALTER TABLE "Campaign" ADD COLUMN IF NOT EXISTS "bannerImageUrl" VARCHAR(500);
+ALTER TABLE "Campaign" ADD COLUMN IF NOT EXISTS "bannerDecoration" JSONB;
+```
+Idempotente — segura contra DBs donde las columnas ya existían ad-hoc. `prisma migrate deploy` aplicado y verificado: "Database schema is up to date!".
+
+**Tests:** `backend/src/campaigns/campaigns-banner.spec.ts` (11 tests):
+- create persiste banner fields / omite cuando no vienen
+- update persiste / limpia con null / no toca cuando se omite / **no reintenta sin banner fields en error P2022** (fallback eliminado)
+- findAll/findOne seleccionan banner fields
+- uploadBanner: éxito persiste URL; fallo de DB → deleteFile + rethrow + un solo update; fallo de upload → sin tocar DB
+
+### 30.3 Frontend
+
+**`frontend/src/api/giftAppService.js`**
+- `giftAppCreateCampaign`: payload incluye `bannerImageUrl`/`bannerDecoration` cuando `!== undefined` (para archivo local NO se envía `bannerImageUrl`; solo se sube por el endpoint de upload después del create).
+- `giftAppUpdateCampaign`: mismo patrón condicional.
+
+**`frontend/src/pages/admin/Campaigns.jsx`**
+- Estado canónico único: `bannerDecoration` (objeto `{ layers: [] }`) — ya no se serializa/parsea JSON string.
+- Controles de banner (input de archivo + `BannerEditor`) renderizados en **Create y Edit** (se eliminó el guard `{editing && ...}`).
+- Vista previa en vivo: `bannerPreviewUrl` (blob URL del archivo local, `URL.createObjectURL`, revocado en cleanup) o `editing.bannerImageUrl` persistida. El preview nunca se persiste.
+- Validación cliente del banner: PNG/JPEG/JPG/WebP + máx 5MB (paridad con el backend).
+- `handleSave`: `payload = { ...form, bannerDecoration }` en create/update (una sola request para decoración, se eliminó el round-trip extra de `JSON.parse`); sube logo y banner tras el create; `clearCache('campaign_' + slug)` tras los uploads (invalida la cache pública); cierra el modal y permanece en la página de Campañas.
+- `closeModal()` resetea bannerFile/preview.
+
+**`frontend/src/components/BannerEditor.jsx`**
+- Refactorizado a **componente controlado**: la decoración viene del padre (`decoration` prop) y todos los cambios salen por `onChange`. Se eliminaron los dos `useEffect` de sincronización que, combinados con StrictMode (double-mount en dev), podían provocar "Maximum update depth exceeded" con HMR.
+- Comportamiento visual idéntico (capas, preview, editor de capa, botones + Texto/+ Imagen/Eliminar).
+
+### 30.4 Verificación (manual, browser)
+
+| Flujo | Resultado |
+|-------|-----------|
+| Create: banner controls visibles | ✅ |
+| Create: selección de imagen local + preview blob en editor | ✅ |
+| Create: capa de texto (texto, color, tamaño 48px) + capa overlay (URL, ancho 25%) con preview completo | ✅ |
+| Crear → DB: `bannerDecoration` con ambas capas + `bannerImageUrl` de Supabase | ✅ |
+| Modal se cierra, toast "Campaña creada.", permanece en Campañas | ✅ |
+| Página pública `/campaign/claro-banner-test-2`: banner + texto + overlay renderizados | ✅ |
+| Edit: banner persistido + capas precargadas en el editor | ✅ |
+| Update → DB: decoración re-persistida | ✅ |
+| Cache pública invalidada tras upload de banner | ✅ (navegación inmediata mostró banner) |
+| Consola sin errores (loop eliminado) | ✅ |
+
+Datos de prueba creados (campañas "Banner Test Creacion" id=9 y "Banner Test 2" id=10, company Claro) fueron **soft-deleted** vía API y sus objetos de Storage `company-9/campaign-{9,10}/banner-*.png` fueron eliminados del bucket.
+
+### 30.5 Builds y tests
+
+| Verificación | Resultado |
+|--------------|-----------|
+| `npx prisma validate` | ✅ |
+| `npx prisma migrate status` | ✅ up to date |
+| `npx prisma generate` | ✅ |
+| `npx prisma migrate deploy` | ✅ aplicada 1 migración |
+| Backend `npm run build` | ✅ |
+| Backend `npm test` (17 suites, 254 tests) | ✅ |
+| Frontend `npm run build` | ✅ |
+
+### 30.6 Áreas protegidas confirmadas como no modificadas
+
+- Stock logic (updateMany guard), selection confirmation transaction
+- Flujo público de autenticación (documentId + JWT público, OTP/Resend)
+- Company scoping (COMPANY_VIEWER) y roles/permisos
+- Schema Prisma (sin cambios — solo se creó la migración pendiente)
+- Rutas existentes, Excel import/export, health/version, timing infrastructure
+- Supabase Storage strategy (bucket `campaign-logos`, path `company-{id}/campaign-{id}/banner-{uuid}.{ext}` sin cambios)
+- `localStorageService.js` (modo demo)
+
+### 30.7 Nota operativa (entorno)
+
+- El bucket Supabase `campaign-logos` fue creado (public) con la service role key durante la sesión: era el requisito faltante para que `POST /admin/campaigns/:id/banner` funcionara (antes: 500 "Bucket not found"). Está documentado como DEP-05 (hardcoded en código).

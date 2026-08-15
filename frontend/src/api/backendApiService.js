@@ -392,7 +392,6 @@ export function mapPublicGiftFromApi(gift) {
   return {
     ...gift,
     imageUrls: gift.images?.map((img) => img.imageUrl) || [],
-    stock: Number(gift.stock),
     minAge: Number(gift.minAge),
     maxAge: Number(gift.maxAge),
   };

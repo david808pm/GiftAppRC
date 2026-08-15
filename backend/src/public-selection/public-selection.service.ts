@@ -136,7 +136,6 @@ export class PublicSelectionService {
         shortDescription: true,
         technicalDescription: true,
         dimensions: true,
-        stock: true,
         minAge: true,
         maxAge: true,
         allowedGender: true,
