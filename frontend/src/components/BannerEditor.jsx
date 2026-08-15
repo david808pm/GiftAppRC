@@ -1,16 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 
-export default function BannerEditor({ initialDecoration, bannerImageUrl, onChange }) {
-    const [decoration, setDecoration] = useState(initialDecoration || { layers: [] });
+export default function BannerEditor({ decoration: initialDecoration, bannerImageUrl, onChange }) {
+    const decoration = initialDecoration || { layers: [] };
     const [selected, setSelected] = useState(null);
 
-    useEffect(() => {
-        setDecoration(initialDecoration || { layers: [] });
-    }, [initialDecoration]);
-
-    useEffect(() => {
-        if (onChange) onChange(decoration);
-    }, [decoration]);
+    function commit(nextDecoration) {
+        if (onChange) onChange(nextDecoration);
+    }
 
     function addTextLayer() {
         const layer = {
@@ -22,7 +18,7 @@ export default function BannerEditor({ initialDecoration, bannerImageUrl, onChan
             x: 0,
             y: 0,
         };
-        setDecoration((d) => ({ ...d, layers: [...d.layers, layer] }));
+        commit({ ...decoration, layers: [...decoration.layers, layer] });
         setSelected(decoration.layers.length);
     }
 
@@ -36,21 +32,19 @@ export default function BannerEditor({ initialDecoration, bannerImageUrl, onChan
             width: '50%',
             opacity: 1,
         };
-        setDecoration((d) => ({ ...d, layers: [...d.layers, layer] }));
+        commit({ ...decoration, layers: [...decoration.layers, layer] });
         setSelected(decoration.layers.length);
     }
 
     function updateLayer(idx, patch) {
-        setDecoration((d) => {
-            const layers = d.layers.map((l, i) => (i === idx ? { ...l, ...patch } : l));
-            return { ...d, layers };
-        });
+        const layers = decoration.layers.map((l, i) => (i === idx ? { ...l, ...patch } : l));
+        commit({ ...decoration, layers });
     }
 
     function removeLayer(idx) {
-        setDecoration((d) => {
-            const layers = d.layers.filter((_, i) => i !== idx);
-            return { ...d, layers };
+        commit({
+            ...decoration,
+            layers: decoration.layers.filter((_, i) => i !== idx),
         });
         setSelected(null);
     }

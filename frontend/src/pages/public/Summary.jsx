@@ -386,6 +386,7 @@ export default function Summary() {
         )}
 
         <div
+          className="public-action-bar"
           style={{
             marginTop: 32,
             display: 'flex',
@@ -400,7 +401,7 @@ export default function Summary() {
             >
               Reportar Problema
             </button>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="public-action-bar__buttons" style={{ display: 'flex', gap: 8 }}>
               <button
                 className="btn btn-outline"
                 onClick={() => navigate(`/campaign/${slug}/select`)}

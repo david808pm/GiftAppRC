@@ -18,6 +18,7 @@ import BannerEditor from '../../components/BannerEditor';
 import Toast, { useToast } from '../../components/Toast';
 import EmptyState from '../../components/EmptyState';
 import ConfirmDialog from '../../components/ConfirmDialog';
+import { clearCache } from '../../utils/simpleCache';
 
 // TODO: Move referential integrity checks to server-side before production.
 
@@ -56,7 +57,20 @@ export default function Campaigns() {
   const [deleting, setDeleting] = useState(false);
   const [logoFile, setLogoFile] = useState(null);
   const [bannerFile, setBannerFile] = useState(null);
-  const [bannerDecorationText, setBannerDecorationText] = useState('');
+  const [bannerDecoration, setBannerDecoration] = useState({ layers: [] });
+  const [bannerPreviewUrl, setBannerPreviewUrl] = useState('');
+
+  // Object URL for the locally selected banner file. It is only used for the
+  // live preview and is never sent to the backend nor persisted.
+  useEffect(() => {
+    if (!bannerFile) {
+      setBannerPreviewUrl('');
+      return undefined;
+    }
+    const url = URL.createObjectURL(bannerFile);
+    setBannerPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [bannerFile]);
 
   const loadCampaigns = async () => {
     if (USE_BACKEND) setLoading(true);
@@ -93,7 +107,7 @@ export default function Campaigns() {
     setErrors({});
     setLogoFile(null);
     setBannerFile(null);
-    setBannerDecorationText('');
+    setBannerDecoration({ layers: [] });
     setShowModal(true);
   };
 
@@ -112,8 +126,14 @@ export default function Campaigns() {
     setErrors({});
     setLogoFile(null);
     setBannerFile(null);
-    setBannerDecorationText(campaign.bannerDecoration ? JSON.stringify(campaign.bannerDecoration, null, 2) : '');
+    setBannerDecoration(campaign.bannerDecoration || { layers: [] });
     setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setBannerFile(null);
+    setBannerPreviewUrl('');
   };
 
   const openCreateCompany = () => {
@@ -159,11 +179,12 @@ export default function Campaigns() {
 
     setSaving(true);
     try {
+      const payload = { ...form, bannerDecoration };
       let result;
       if (editing) {
-        result = await giftAppUpdateCampaign(editing.id, form);
+        result = await giftAppUpdateCampaign(editing.id, payload);
       } else {
-        result = await giftAppCreateCampaign(form);
+        result = await giftAppCreateCampaign(payload);
         // Switch to edit mode immediately so a logo-upload failure doesn't
         // allow re-submitting and creating a duplicate campaign.
         setEditing(result);
@@ -176,17 +197,16 @@ export default function Campaigns() {
       if (USE_BACKEND && bannerFile && campaignId) {
         await giftAppUploadCampaignBanner(campaignId, bannerFile);
       }
-      if (USE_BACKEND && bannerDecorationText && campaignId) {
-        try {
-          const parsed = JSON.parse(bannerDecorationText);
-          await giftAppUpdateCampaign(campaignId, { bannerDecoration: parsed });
-        } catch (err) {
-          addToast('JSON inválido para bannerDecoration.', 'error');
-        }
+
+      // Invalidate the public campaign cache so the banner/preview is
+      // immediately fresh (banner uploads do not clear it by themselves).
+      const campaignSlug = editing?.slug || result?.slug;
+      if (campaignSlug) {
+        clearCache(`campaign_${campaignSlug}`);
       }
 
       await loadCampaigns();
-      setShowModal(false);
+      closeModal();
       setLogoFile(null);
       addToast(editing ? 'Campaña actualizada.' : 'Campaña creada.');
     } catch (err) {
@@ -215,6 +235,25 @@ export default function Campaigns() {
   const updateField = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     setErrors((prev) => ({ ...prev, [field]: '' }));
+  };
+
+  const handleBannerFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setBannerFile(null);
+      return;
+    }
+    if (!['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(file.type)) {
+      addToast('Solo se permiten imágenes PNG, JPEG, JPG o WebP.', 'error');
+      e.target.value = '';
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      addToast('El banner no puede superar los 5MB.', 'error');
+      e.target.value = '';
+      return;
+    }
+    setBannerFile(file);
   };
 
   if (USE_BACKEND && loading) {
@@ -326,11 +365,11 @@ export default function Campaigns() {
 
       <Modal
         isOpen={showModal}
-        onClose={() => setShowModal(false)}
+        onClose={closeModal}
         title={editing ? 'Editar Campaña' : 'Nueva Campaña'}
         footer={
           <>
-            <button className="btn btn-outline" onClick={() => setShowModal(false)} disabled={saving}>
+            <button className="btn btn-outline" onClick={closeModal} disabled={saving}>
               Cancelar
             </button>
             <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
@@ -418,27 +457,28 @@ export default function Campaigns() {
             onChange={(e) => updateField('welcomeText', e.target.value)}
           />
         </div>
-        {editing && (
-          <div className="form-group">
-            <label>Banner (imagen prediseñada)</label>
-            <input type="file" accept="image/*" onChange={(e) => setBannerFile(e.target.files?.[0] || null)} />
-            {editing.bannerImageUrl && (
-              <div style={{ marginTop: 8 }}>
-                <img src={editing.bannerImageUrl} alt="banner" style={{ maxWidth: '100%', height: 'auto' }} />
-              </div>
-            )}
-          </div>
-        )}
-        {editing && (
-          <div className="form-group">
-            <label>Editor de Banner</label>
-            <BannerEditor
-              bannerImageUrl={editing.bannerImageUrl}
-              initialDecoration={editing.bannerDecoration}
-              onChange={(dec) => setBannerDecorationText(JSON.stringify(dec, null, 2))}
-            />
-          </div>
-        )}
+        <div className="form-group">
+          <label>Banner (imagen prediseñada)</label>
+          <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" onChange={handleBannerFileChange} />
+          {(bannerPreviewUrl || (!bannerFile && editing?.bannerImageUrl)) && (
+            <div style={{ marginTop: 8 }}>
+              <img src={bannerPreviewUrl || editing.bannerImageUrl} alt="banner" style={{ maxWidth: '100%', height: 'auto' }} />
+            </div>
+          )}
+          {bannerFile && (
+            <p style={{ fontSize: '0.8125rem', color: 'var(--gray-500)', marginTop: 4 }}>
+              {bannerFile.name} ({(bannerFile.size / 1024).toFixed(1)} KB)
+            </p>
+          )}
+        </div>
+        <div className="form-group">
+          <label>Editor de Banner</label>
+          <BannerEditor
+            bannerImageUrl={bannerPreviewUrl || editing?.bannerImageUrl || ''}
+            decoration={bannerDecoration}
+            onChange={setBannerDecoration}
+          />
+        </div>
         <div className="form-group">
           <label>Texto de Reglas</label>
           <textarea

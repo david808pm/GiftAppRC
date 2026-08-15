@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-export default function Modal({ isOpen, onClose, title, children, footer, busy = false }) {
+export default function Modal({ isOpen, onClose, title, children, footer, busy = false, className = '' }) {
   useEffect(() => {
     if (!isOpen) return;
     const handleEsc = (e) => {
@@ -19,7 +19,7 @@ export default function Modal({ isOpen, onClose, title, children, footer, busy =
   return (
     <div className="modal-overlay" onClick={busy ? undefined : onClose}>
       <div
-        className="modal-content"
+        className={`modal-content ${className}`.trim()}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

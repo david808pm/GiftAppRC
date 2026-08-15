@@ -12,7 +12,12 @@ export default function GiftDetailModal({ gift, isOpen, onClose, onSelect }) {
       : ['https://placehold.co/400x400/CCCCCC/666?text=No+Image'];
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={gift.name}>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={gift.name}
+      className="gift-detail-modal"
+    >
       <div className="gift-detail-gallery">
         {images.map((url, i) => (
           <img
@@ -75,19 +80,15 @@ export default function GiftDetailModal({ gift, isOpen, onClose, onSelect }) {
             {gift.allowedGender === 'all' ? 'Todos' : gift.allowedGender === 'male' ? 'Masculino' : 'Femenino'}
           </span>
         </div>
-        <div className="gift-detail-spec">
-          <label>Stock Disponible</label>
-          <span>{gift.stock}</span>
-        </div>
       </div>
 
-      <div style={{ marginTop: 20, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button className="btn btn-outline" onClick={onClose}>
-            Cerrar
-          </button>
-          <button className="btn btn-primary" onClick={() => onSelect(gift)}>
-            Seleccionar este regalo
-          </button>
+      <div className="gift-detail-actions" style={{ marginTop: 20, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <button className="btn btn-outline" onClick={onClose}>
+          Cerrar
+        </button>
+        <button className="btn btn-primary" onClick={() => onSelect(gift)}>
+          Seleccionar este regalo
+        </button>
       </div>
     </Modal>
   );

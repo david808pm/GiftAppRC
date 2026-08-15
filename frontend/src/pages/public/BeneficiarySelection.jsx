@@ -516,6 +516,7 @@ export default function BeneficiarySelection() {
         )}
 
         <div
+          className="public-action-bar"
           style={{
             marginTop: 32,
             display: 'flex',
@@ -523,14 +524,14 @@ export default function BeneficiarySelection() {
             flexWrap: 'wrap',
             gap: 8,
           }}
-        >
+          >
             <button
               className="btn btn-outline btn-sm"
               onClick={() => setShowSupport(!showSupport)}
             >
               Reportar Problema
             </button>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="public-action-bar__buttons" style={{ display: 'flex', gap: 8 }}>
               <button
                 className="btn btn-outline"
                 onClick={() => { setSelectionError(''); setActiveTab(Math.max(0, activeTab - 1)); }}
