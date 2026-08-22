@@ -6,6 +6,6 @@ import { SupabaseStorageService } from '../common/services/supabase-storage.serv
 @Module({
   controllers: [GiftsAdminController],
   providers: [GiftsService, SupabaseStorageService],
-  exports: [GiftsService],
+  exports: [GiftsService, SupabaseStorageService],
 })
 export class GiftsModule {}

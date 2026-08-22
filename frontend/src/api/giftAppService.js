@@ -345,6 +345,34 @@ export async function giftAppImportEmployeesBeneficiaries(file) {
 }
 
 // ═══════════════════════════════════════════════════════════
+// Gift import (Excel + ZIP) — backend only
+// ═══════════════════════════════════════════════════════════
+
+export async function giftAppValidateGiftImport(excelFile, zipFile) {
+  if (USE_BACKEND) {
+    const { validateGiftImportPackage } = await getBackendAuth();
+    return await validateGiftImportPackage(excelFile, zipFile);
+  }
+  throw new Error('La importación de regalos solo está disponible en modo backend.');
+}
+
+export async function giftAppCommitGiftImport(excelFile, zipFile) {
+  if (USE_BACKEND) {
+    const { commitGiftImportPackage } = await getBackendAuth();
+    return await commitGiftImportPackage(excelFile, zipFile);
+  }
+  throw new Error('La importación de regalos solo está disponible en modo backend.');
+}
+
+export async function giftAppDownloadGiftImportTemplate() {
+  if (USE_BACKEND) {
+    const { downloadGiftImportTemplate } = await getBackendAuth();
+    return await downloadGiftImportTemplate();
+  }
+  throw new Error('La plantilla de regalos solo está disponible en modo backend.');
+}
+
+// ═══════════════════════════════════════════════════════════
 // Beneficiaries
 // ═══════════════════════════════════════════════════════════
 

@@ -11,7 +11,7 @@ import { CreateGiftDto } from './dto/create-gift.dto';
 import { UpdateGiftDto } from './dto/update-gift.dto';
 import { GiftQueryDto } from './dto/gift-query.dto';
 import { SupabaseStorageService } from '../common/services/supabase-storage.service';
-import { Prisma } from '@prisma/client';
+import { Prisma, SelectionStatus } from '@prisma/client';
 
 @Injectable()
 export class GiftsService {
@@ -27,7 +27,21 @@ export class GiftsService {
     images: { orderBy: { sortOrder: 'asc' as const } },
     createdBy: { select: { id: true, name: true, email: true } },
     updatedBy: { select: { id: true, name: true, email: true } },
+    _count: {
+      select: {
+        selectionItems: {
+          where: { selection: { status: SelectionStatus.CONFIRMED } },
+        },
+      },
+    },
   };
+
+  private mapGiftResponse<T extends { _count?: { selectionItems?: number } }>(
+    gift: T,
+  ) {
+    const { _count, ...rest } = gift;
+    return { ...rest, timesSelected: _count?.selectionItems ?? 0 };
+  }
 
   private async syncImages(
     tx: Prisma.TransactionClient,
@@ -124,11 +138,13 @@ export class GiftsService {
       };
     }
 
-    return this.prisma.gift.findMany({
-      where,
-      include: this.giftInclude,
-      orderBy: { createdAt: 'desc' },
-    });
+    return this.prisma.gift
+      .findMany({
+        where,
+        include: this.giftInclude,
+        orderBy: { createdAt: 'desc' },
+      })
+      .then((gifts) => gifts.map((g) => this.mapGiftResponse(g)));
   }
 
   // ── Admin: get by id ─────────────────────────────────────
@@ -156,7 +172,7 @@ export class GiftsService {
       }
     }
 
-    return gift;
+    return this.mapGiftResponse(gift);
   }
 
   // ── Admin: create ────────────────────────────────────────
@@ -352,11 +368,13 @@ export class GiftsService {
     // TODO: Check for selections when Selection model exists.
     // TODO: AuditLog — log gift deletion when AuditLog module is implemented.
 
-    return this.prisma.gift.update({
-      where: { id },
-      data: { deletedAt: new Date(), status: 'INACTIVE' },
-      include: this.giftInclude,
-    });
+    return this.prisma.gift
+      .update({
+        where: { id },
+        data: { deletedAt: new Date(), status: 'INACTIVE' },
+        include: this.giftInclude,
+      })
+      .then((g) => this.mapGiftResponse(g));
   }
 
   // ── Admin: upload images ────────────────────────────────

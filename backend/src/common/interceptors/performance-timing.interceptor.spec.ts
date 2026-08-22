@@ -322,6 +322,62 @@ describe('PerformanceTimingInterceptor', () => {
     expect(keys).not.toContain('warnings');
   });
 
+  it('should include gift-import validate aggregate fields (allowlist only)', async () => {
+    setEnv('true');
+    const interceptor = createInterceptor();
+    const validateResult = {
+      canImport: true,
+      totalRows: 25,
+      errorCount: 0,
+      warningCount: 2,
+      issues: [{ secret: true }], // should NOT appear
+      folderPreviews: [{ row: 2, files: [{ name: 'x.png' }] }], // should NOT appear
+    };
+    const { context } = createMockContext({
+      operation: 'admin.gift-import.validate',
+      method: 'POST',
+    });
+    await interceptor
+      .intercept(context as any, { handle: () => of(validateResult) })
+      .toPromise();
+    const event = parseLoggedEvent();
+    expect(event.operation).toBe('admin.gift-import.validate');
+    expect(event.totalRows).toBe(25);
+    expect(event.errorCount).toBe(0);
+    expect(event.warningCount).toBe(2);
+    expect(event.giftsCreated).toBeUndefined();
+    expect(
+      Object.keys(event).some((k) => k === 'issues' || k === 'folderPreviews'),
+    ).toBe(false);
+  });
+
+  it('should include gift-import commit aggregate fields (allowlist only)', async () => {
+    setEnv('true');
+    const interceptor = createInterceptor();
+    const commitResult = {
+      canImport: true,
+      totalRows: 25,
+      giftsCreated: 25,
+      imagesUploaded: 75,
+      warningCount: 3,
+      errorCount: 0,
+    };
+    const { context } = createMockContext({
+      operation: 'admin.gift-import.commit',
+      method: 'POST',
+    });
+    await interceptor
+      .intercept(context as any, { handle: () => of(commitResult) })
+      .toPromise();
+    const event = parseLoggedEvent();
+    expect(event.operation).toBe('admin.gift-import.commit');
+    expect(event.totalRows).toBe(25);
+    expect(event.giftsCreated).toBe(25);
+    expect(event.imagesUploaded).toBe(75);
+    expect(event.errorCount).toBe(0);
+    expect(event.canImport).toBeUndefined();
+  });
+
   // ── 8. Export fileSizeBytes ─────────────────────────────
 
   it('should include fileSizeBytes when response is a Buffer', async () => {

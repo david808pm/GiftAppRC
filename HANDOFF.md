@@ -1,7 +1,7 @@
 # GiftApp — HANDOFF Document
 
 > Documento de transferencia para retomar el proyecto en una nueva sesión.
-> Última actualización: 23 de julio de 2026 (sesión Excel Import Validation Hardening).
+> Última actualización: 20 de agosto de 2026 (Sesión 31 — Bulk Gift Import Excel + ZIP).
 
 ---
 
@@ -47,7 +47,19 @@ mimo-regalostestv4/
   │   │   │   └── dashboard.service.ts       # [MODIFICADO] Con cache
   │   │   ├── employees/             # CRUD empleados [MODIFICADO] Paginación server-side
   │   │   ├── gifts/                 # CRUD regalos + imágenes
-│   │   ├── imports/
+  │   │   ├── gift-imports/           # [Sesión 31] Importación masiva de regalos (Excel + ZIP)
+  │   │   │   ├── gift-import.admin.controller.ts # [NUEVO] validate / commit / template (SUPER_ADMIN)
+  │   │   │   ├── gift-import.service.ts          # [NUEVO] validatePackage + commitImport (compensación all-or-nothing) + buildTemplate
+  │   │   │   ├── gift-import-validation.ts       # [NUEVO] Capa pura de validación (headers, filas, códigos, límites)
+  │   │   │   ├── gift-import-zip.ts              # [NUEVO] Parser ZIP seguro (jszip: traversal/bombs/ambigüedad/encrypted)
+  │   │   │   ├── gift-import.module.ts           # [NUEVO] Reutiliza SupabaseStorageService exportado por GiftsModule
+  │   │   │   ├── gift-import-validation.spec.ts  # [NUEVO] Validadores puros
+  │   │   │   ├── gift-import-zip.spec.ts         # [NUEVO] Seguridad ZIP
+  │   │   │   ├── gift-import-atomic.spec.ts      # [NUEVO] Regla atómica + compensación
+  │   │   │   ├── gift-import-admin.controller.spec.ts # [NUEVO] Cardinalidad multipart + fileFilter
+  │   │   │   ├── gift-manual-unchanged.spec.ts   # [NUEVO] Regresión creación manual intacta
+  │   │   │   └── test-utils.ts                   # [NUEVO] Helpers de tests
+  │   │   ├── imports/
 │   │   │   ├── imports.admin.controller.ts # Admin endpoint
 │   │   │   ├── imports.service.ts          # [MODIFICADO] Validación completa pre-write + regla atómica
 │   │   │   ├── import-validation.ts        # [NUEVO] Capa de validación pura (tipos, códigos, validadores)
@@ -96,9 +108,9 @@ mimo-regalostestv4/
 │   │   │   │   ├── AdminUsers.jsx
 │   │   │   │   ├── BeneficiariesAdmin.jsx  # [MODIFICADO] Paginación server-side
 │   │   │   │   ├── Campaigns.jsx              # [MODIFICADO] Fix preview slug duplicado + [Sesión 30] Banner completo en create/edit
-│   │   │   │   ├── Employees.jsx          # [MODIFICADO] Paginación server-side + UX importación + reporte issues de validación
-│   │   │   │   ├── Gifts.jsx
-│   │   │   │   ├── Selections.jsx
+  │   │   │   │   ├── Employees.jsx          # [MODIFICADO] Paginación server-side + UX importación + reporte issues de validación
+  │   │   │   │   ├── Gifts.jsx             # [Sesión 31] Botones Crear regalo + Importar regalos + modal 3 fases (Excel + ZIP)
+  │   │   │   │   ├── Selections.jsx
 │   │   │   │   └── SupportRequests.jsx
 │   │   │   ├── public/
 │   │   │   │   ├── AlreadyConfirmed.jsx
@@ -202,6 +214,7 @@ npm run preview                # Preview del build
 ```bash
 cd backend
 ./test-timing.sh               # Mide tiempos de endpoints admin
+./scripts/benchmark-gift-import.ts   # [Sesión 31] Benchmark import de regalos: npm run benchmark:gift-import [10|25|50]
 ```
 
 ---
@@ -605,6 +618,16 @@ Changes not staged (sesiones previas + sesiones 3, 4, 6, 8, 13-14 y 23 de julio 
    - frontend/src/pages/public/EmployeeLogin.jsx                   (flujo OTP de 2 pasos)
    - frontend/src/utils/validators.js                              (FE-04: empty age validation)
    - frontend/src/styles/global.css                                (estilos de paginación)
+   - HANDOFF.md                                                    (Sesión 31: sección 31 + esta lista)
+   - backend/package.json                                          (Sesión 31: +jszip directa + script benchmark:gift-import)
+   - backend/package-lock.json                                     (Sesión 31: jszip)
+   - backend/src/app.module.ts                                     (Sesión 31: +GiftImportsModule)
+   - backend/src/gifts/gifts.module.ts                             (Sesión 31: exporta SupabaseStorageService)
+   - backend/src/common/interceptors/performance-timing.interceptor.ts (Sesión 31: allowlist gift-import.validate/commit)
+   - backend/src/common/interceptors/performance-timing.interceptor.spec.ts (Sesión 31: +2 tests allowlist)
+   - frontend/src/api/backendApiService.js                         (Sesión 31: +validateGiftImportPackage/+commitGiftImportPackage/+downloadGiftImportTemplate)
+   - frontend/src/api/giftAppService.js                            (Sesión 31: +giftAppValidateGiftImport/+giftAppCommitGiftImport/+giftAppDownloadGiftImportTemplate)
+   - frontend/src/pages/admin/Gifts.jsx                            (Sesión 31: botones Crear regalo + Importar regalos + modal 3 fases)
 
 Deleted (not staged):
    - Informe_Auditoria_mimo-regalos.docx
@@ -660,9 +683,11 @@ Untracked files:
    - backend/src/common/guards/roles-guard-employees-export.spec.ts # [NUEVO] Fase G: 12 tests
     - backend/src/selections/selections-export-compatibility.spec.ts # [NUEVO] Fase G: 10 tests
     - backend/src/admin-users/admin-users-remove.spec.ts            # [NUEVO] Sesión 23 julio: 16 tests
+    - backend/scripts/benchmark-gift-import.ts                      # [NUEVO] Sesión 31: benchmark manual 10/25/50 regalos
+    - backend/src/gift-imports/                                     # [NUEVO] Sesión 31: Bulk Gift Import (Excel+ZIP) — 11 archivos
    - tigo_import_500_empleados.xlsx
    - tigo_import_500_empleados_nuevos_datos.xlsx
-```
+ ```
 
 **IMPORTANTE:** Todos los cambios desde la sesión del 17 de junio NO han sido commiteados. Se deben commitear antes de desplegar a producción.
 
@@ -772,6 +797,7 @@ Untracked files:
 - ✅ COMPANY_VIEWER Selection Export: ya funcionaba correctamente, verificado con 10 tests de compatibilidad
 - ✅ Admin User Deletion: SUPER_ADMIN puede eliminar COMPANY_VIEWER via `DELETE /api/admin/users/:id`, atomic `deleteMany` con filtro de rol, self-deletion protegido, ADMIN/SUPER_ADMIN rechazados, 12 FK audit columns (ON DELETE SET NULL) seguras, sin migración de schema, 16 tests, frontend con ConfirmDialog y eliminación local de fila
 - ✅ Excel Import Validation Hardening: capa de validación pura (`import-validation.ts`), códigos estables (14 códigos), validación completa de cada fila/columna (no para en el primer error), cross-row detection (DUPLICATE_BENEFICIARY_IN_FILE, CONFLICTING_EMPLOYEE_DATA), regla atómica (ERROR → 0 writes, `$transaction` nunca llamado), ImportResult extendido (`canImport`, `issues`, `errorCount`), fix del allowlist de PerformanceTimingInterceptor (import metadata ahora se emite), frontend con banner "Importación bloqueada" + lista rich de issues, 41 tests (33 de validadores puros + 8 de regla atómica con .xlsx reales), 16 suites / 243 tests total
+- ✅ Bulk Gift Import (Excel + ZIP): Sesión 31. `POST /api/admin/gift-import/{validate,commit}` + `GET /template` (SUPER_ADMIN). Headers Excel en español (12 columnas, alias `Imagenes`), ZIP con carpetas top-level por regalo (máx 3 imágenes/regalo), parser jszip con seguridad (traversal, encrypted via loadAsync, zip bomb, ambigüedad case-insensitive `DUPLICATE_IMAGE_FOLDER_CASE_INSENSITIVE`, magic bytes), límites conservadores (Excel 5 MB, ZIP 50 MB, 50 regalos, 150 imágenes, 200 MB uncompressed, 300 entradas, concurrency 3), regla atómica (ERROR → 0 writes/uploads), **compensación all-or-nothing** en commit (borra gifts + GiftImage + storage objects del intento, espera subidas en curso, continúa si un delete falla, preserva error original; NO es atomicidad transaccional PG↔Supabase), `SupabaseStorageService` reutilizado vía export de `GiftsModule`, allowlist de timing para las 2 operaciones, modal de 3 fases en `Gifts.jsx` (`Crear regalo`/`Importar regalos`), plantilla descargable, benchmark manual 10/25/50 (`npm run benchmark:gift-import`), 66 tests nuevos, suite total 22 suites / 323 tests.
 
 ### Largo plazo
 11. **Migrar a TanStack Query** para caching y deduplicación de requests
@@ -840,8 +866,8 @@ Columnas: `campaignSlug`, `employeeDocumentId`, `employeeFullName`, `employeeEma
 - **Proyecto original:** mimo-regalostestv7/mimo-regalostestv4
 - **Versión anterior de referencia:** mimo-regalostestv4 (dentro del mismo directorio)
 - **Informe de auditoría:** `Informe_Auditoria_mimo-regalos.docx`
-- **Fecha de última sesión:** 4 de agosto de 2026
-- **Sesiones previas:** 6 fases de optimización de rendimiento + migración a us-east-1 + fix slug duplicado + bulk employee/beneficiary + employees/beneficiaries pagination + auditoría completa + 14 fixes de bugs funcionales/datos/caché/frontend + BUG-09 fix logout + Email OTP público con Resend (request-code, verify-code, anti-enumeración, lockout, rollback) + Gift images multi-file upload (hasta 3 imágenes por regalo, FilesInterceptor, parallel Supabase upload) + Health/version endpoints (Phase A) + Structured performance timing (Phase B) + Reproducible benchmark + layered latency diagnosis (Phases C/D) + Auth/me query optimization (Phase E) + Dashboard query consolidation with groupBy (Phase F, 21→9 queries) + Employee Excel export + authorization scoping (Phase G) + Admin User Deletion (SUPER_ADMIN delete COMPANY_VIEWER, atomic deleteMany role filter, 16 tests) + Excel Import Validation Hardening (regla atómica, capa de validación pura, códigos estables, cross-row detection, 41 tests) + Campaign Banner en Create Mode (Sesión 30: persistencia completa de bannerImageUrl/bannerDecoration en create/update, selects admin, migración idempotente, BannerEditor controlado, limpieza compensatoria en uploadBanner, bucket campaign-logos creado en Supabase)
+- **Fecha de última sesión:** 20 de agosto de 2026
+- **Sesiones previas:** 6 fases de optimización de rendimiento + migración a us-east-1 + fix slug duplicado + bulk employee/beneficiary + employees/beneficiaries pagination + auditoría completa + 14 fixes de bugs funcionales/datos/caché/frontend + BUG-09 fix logout + Email OTP público con Resend (request-code, verify-code, anti-enumeración, lockout, rollback) + Gift images multi-file upload (hasta 3 imágenes por regalo, FilesInterceptor, parallel Supabase upload) + Health/version endpoints (Phase A) + Structured performance timing (Phase B) + Reproducible benchmark + layered latency diagnosis (Phases C/D) + Auth/me query optimization (Phase E) + Dashboard query consolidation with groupBy (Phase F, 21→9 queries) + Employee Excel export + authorization scoping (Phase G) + Admin User Deletion (SUPER_ADMIN delete COMPANY_VIEWER, atomic deleteMany role filter, 16 tests) + Excel Import Validation Hardening (regla atómica, capa de validación pura, códigos estables, cross-row detection, 41 tests) + Campaign Banner en Create Mode (Sesión 30: persistencia completa de bannerImageUrl/bannerDecoration en create/update, selects admin, migración idempotente, BannerEditor controlado, limpieza compensatoria en uploadBanner, bucket campaign-logos creado en Supabase) + Bulk Gift Import Excel+ZIP (Sesión 31: validate/commit/template, jszip directa, compensación all-or-nothing, límites conservadores 50 regalos/150 imágenes, 66 tests, benchmark 10/25/50)
 - **Supabase us-east-1:** Proyecto `uqxvrmcxumqnllaobrlh` en Virginia del Norte
 - **Resend:** API key restringida a envío de emails. Cuenta: david808pm@hotmail.com. EMAIL_FROM temporal: `onboarding@resend.dev` (solo envía al dueño de la cuenta). Para producción: verificar dominio en resend.com/domains.
 - **Empresas creadas:** Default Company, Nutresa, Coca-Cola, Tigo, EMP, Novaventa, TestCacheCompany (esta última creada durante verificación de CACHE-02)
@@ -2607,3 +2633,53 @@ Datos de prueba creados (campañas "Banner Test Creacion" id=9 y "Banner Test 2"
 ### 30.7 Nota operativa (entorno)
 
 - El bucket Supabase `campaign-logos` fue creado (public) con la service role key durante la sesión: era el requisito faltante para que `POST /admin/campaigns/:id/banner` funcionara (antes: 500 "Bucket not found"). Está documentado como DEP-05 (hardcoded en código).
+
+---
+
+## 31. Sesión 20 de agosto de 2026 — Bulk Gift Import (Excel + ZIP) con compensación all-or-nothing
+
+Importación masiva de regalos para SUPER_ADMIN: `Crear regalo` + `Importar regalos` en `Gifts.jsx`. Flujo de 2 pasos (validar → confirmar) stateless: el frontend conserva ambos archivos y "Confirmar importación" re-envía el mismo Excel+ZIP; el backend re-valida TODO el paquete antes de escribir (regla atómica). Se preserva la creación manual y la gestión de imágenes existentes.
+
+### 31.1 Endpoints (nuevos)
+| Método | Path | Rol | Descripción |
+|---|---|---|---|
+| POST | `/api/admin/gift-import/validate` | SUPER_ADMIN | Valida el paquete completo. **0 writes, 0 uploads**. |
+| POST | `/api/admin/gift-import/commit` | SUPER_ADMIN | Re-valida y, si no hay errores bloqueantes, importa con **compensación all-or-nothing**. |
+| GET | `/api/admin/gift-import/template` | SUPER_ADMIN | Descarga `plantilla_regalos.xlsx` (hojas Regalos + Instrucciones). |
+
+### 31.2 Contrato Excel (headers canónicos en español, fila 1)
+`CarpetaImagenes` (alias legacy `Imagenes`, si ambas → `DUPLICATE_HEADER`), `Campaña`, `Nombre`, `Referencia`, `DescripciónCorta`, `DescripciónTécnica`, `Medidas`, `Cantidad` (obligatorio, entero ≥0; vacío = bloqueante, nunca default 0), `EdadMinima`, `EdadMaxima` (obligatorios 0-13), `Género` (all/todos, male/masculino, female/femenino), `Estado` (ACTIVE/Activo, INACTIVE/Inactivo; vacío → ACTIVE). Opcionales vacíos → `null` real (nunca `"null"`). Una fila = un regalo. Referencia normalizada trim+mayúsculas (paridad con create manual); ceros a la izquierda preservados.
+
+### 31.3 Contrato ZIP + seguridad (limitado, primera versión)
+- Límites: ZIP ≤50 MB, Excel ≤5 MB (multer ceiling global = 50 MB + validación por campo), ≤50 regalos, ≤150 imágenes, ≤3 imágenes/regalo, ≤2 MB/imagen, uncompressed total ≤200 MB, ≤300 entradas, concurrency de subida = 3.
+- Seguridad (todo en memoria, jszip 3.10.1 como dependencia directa): path traversal/absoluta/drive/backslash, entradas cifradas (el propio `loadAsync` rechaza), zip bomb (ratio + tamaño por entrada), `DUPLICATE_IMAGE_FOLDER_CASE_INSENSITIVE`, magic bytes JPEG/PNG/WebP, revisión de CRC32.
+- Carpeta = carpeta top-level cuyo nombre se compara trim + case-insensitive (los ceros a la izquierda son significativos: `0010` !== `10`). Imágenes = hijos directos; subcarpeta anidada → `NESTED_FOLDER_IN_IMAGE_FOLDER` (bloqueante). Archivo no-imagen en carpeta referenciada → `UNSUPPORTED_FILE_IN_IMAGE_FOLDER` (bloqueante). Metadata de SO (`.DS_Store`, `Thumbs.db`, `__MACOSX`, `._*`) → warning `OS_METADATA_IGNORED`. Archivos en la raíz del ZIP → warning no bloqueante. Carpeta sin fila que la referencie → warning `ZIP_UNREFERENCED_FOLDER`.
+- Los nombres de entrada del ZIP **nunca** se usan como storage paths (se generan `campaign-{id}/gift-{id}/{uuid}.{ext}`, sin cambios en bucket/path scheme).
+
+### 31.4 Compensación all-or-nothing (NO es atomicidad transaccional PG↔Supabase)
+Se registran: cada `Gift` creado, cada storage path subido y los `GiftImage` creados. Ante cualquier fallo en commit: se esperan las subidas en curso (`runWithConcurrencyCollect` con pool acotado corre TODO hasta el final y recolecta fallos por ítem — sin abortar en el primer error), se eliminan todos los storage objects del intento, después los `GiftImage` y los `Gift` creados (`deleteMany` por ids del intento; cascade cubre filas sobrantes). La limpieza continúa aunque un delete falle (cada fallo se loguea) y el error original se preserva. Datos pre-existentes nunca se tocan.
+
+### 31.5 Archivos nuevos (backend)
+- `src/gift-imports/gift-import-validation.ts` — capa pura de validación (headers, filas, stock/edades/género/estado, duplicados referencia intra-archivo, códigos estables `GIFT_CODE`, límites `LIMITS`).
+- `src/gift-imports/gift-import-zip.ts` — parseo ZIP seguro con jszip (inventario de carpetas, security checks, `sniffImageType` afuera en validation).
+- `src/gift-imports/gift-import.service.ts` — `validatePackage` / `commitImport` / `buildTemplate` + `compensate`.
+- `src/gift-imports/gift-import.admin.controller.ts` — `validate`/`commit`/`template`; `FileFieldsInterceptor` + `GIFT_IMPORT_FILE_FILTER` (rechaza campos extra), `extractFiles` (cardinalidad exacta 1+1), `@TrackPerformance('admin.gift-import.validate'|'admin.gift-import.commit')`.
+- `src/gift-imports/gift-import.module.ts` — importa `GiftsModule` y reutiliza su `SupabaseStorageService` exportado (sin instancia duplicada).
+- Specs: `gift-import-validation.spec.ts`, `gift-import-zip.spec.ts`, `gift-import-atomic.spec.ts` (regla atómica + compensación), `gift-import-admin.controller.spec.ts` (cardinalidad + fileFilter), `gift-manual-unchanged.spec.ts` (regresión de creación manual).
+- `scripts/benchmark-gift-import.ts` + script `benchmark:gift-import` — benchmark manual 10/25/50 regalos (30/75/150 imágenes) contra DB+Storage reales; crea campaña temporal y limpia todo (NO ejecutar en CI).
+
+### 31.6 Archivos modificados
+- `backend/package.json` — `jszip@^3.10.1` como dependencia directa + script `benchmark:gift-import`.
+- `src/gifts/gifts.module.ts` — exporta `SupabaseStorageService`.
+- `src/app.module.ts` — registra `GiftImportsModule`.
+- `src/common/interceptors/performance-timing.interceptor.ts` (+spec) — allowlist para las 2 operaciones nuevas (validate: totalRows/errorCount/warningCount; commit: +giftsCreated/imagesUploaded).
+- Frontend: `src/api/backendApiService.js` (+3 funciones), `src/api/giftAppService.js` (+3), `src/pages/admin/Gifts.jsx` (botones `Crear regalo`/`Importar regalos`, modal de 3 fases upload→review→result, descarga de plantilla).
+
+### 31.7 Config
+- No hay variables de entorno nuevas (reutiliza `SUPABASE_STORAGE_BUCKET=gift-images`).
+- Los límites se centralizan en `LIMITS` dentro de `gift-import-validation.ts`.
+
+### 31.8 Verificación
+- Backend: 22 suites / 323 tests ✅ · `npm run build` ✅ · `npx tsc --noEmit` ✅
+- Frontend: `npm run build` ✅
+- Áreas protegidas sin tocar: stock/confirmación, flujo público, OTP, scoping, roles, schema Prisma y migraciones, rutas existentes, exports existentes, `gifts.service.ts`/controller existentes, bucket/path de storage, UI pública.
