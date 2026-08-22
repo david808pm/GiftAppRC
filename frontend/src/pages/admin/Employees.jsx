@@ -502,7 +502,7 @@ export default function Employees() {
         }
       >
         <div className="form-group">
-          <label>Campaña</label>
+          <label>Campaña (selecciona la campaña correspondiente)</label>
           <select
             value={form.campaignId}
             onChange={(e) => updateField('campaignId', e.target.value)}
@@ -517,7 +517,7 @@ export default function Employees() {
           {errors.campaignId && <p className="form-error">{errors.campaignId}</p>}
         </div>
         <div className="form-group">
-          <label>Nombre Completo</label>
+          <label>Nombre Completo (ingresa nombres y apellidos)</label>
           <input
             value={form.fullName}
             onChange={(e) => updateField('fullName', e.target.value)}
@@ -525,7 +525,7 @@ export default function Employees() {
           {errors.fullName && <p className="form-error">{errors.fullName}</p>}
         </div>
         <div className="form-group">
-          <label>Número de Identificación</label>
+          <label>Número de Identificación (ingresa el documento sin espacios)</label>
           <input
             value={form.documentId}
             onChange={(e) => updateField('documentId', e.target.value)}
@@ -534,7 +534,7 @@ export default function Employees() {
           {errors.documentId && <p className="form-error">{errors.documentId}</p>}
         </div>
         <div className="form-group">
-          <label>Correo</label>
+          <label>Correo (ingresa un correo válido)</label>
           <input
             type="email"
             value={form.email}
@@ -542,7 +542,7 @@ export default function Employees() {
           />
         </div>
         <div className="form-group">
-          <label>Teléfono</label>
+          <label>Teléfono (ingresa un número de contacto)</label>
           <input
             type="text"
             value={form.phone || ''}
@@ -551,7 +551,7 @@ export default function Employees() {
           />
         </div>
         <div className="form-group">
-          <label>Ciudad</label>
+          <label>Ciudad (ingresa la ciudad de entrega)</label>
           <input
             type="text"
             value={form.shippingCity || ''}
@@ -560,7 +560,7 @@ export default function Employees() {
           />
         </div>
         <div className="form-group">
-          <label>Dirección de Envío</label>
+          <label>Dirección de Envío (ingresa la dirección completa)</label>
           <input
             type="text"
             value={form.shippingAddress || ''}
@@ -569,7 +569,7 @@ export default function Employees() {
           />
         </div>
         <div className="form-group">
-          <label>Estado</label>
+          <label>Estado (selecciona el estado del empleado)</label>
           <select
             value={form.status}
             onChange={(e) => updateField('status', e.target.value)}
@@ -682,35 +682,35 @@ export default function Employees() {
                 </tr>
                 {importResult.canImport === false &&
                   (importResult.issues || importResult.errors || []).length > 0 && (
-                  <tr>
-                    <td style={{ padding: '4px 8px', color: 'var(--danger, #dc2626)', verticalAlign: 'top' }}>
-                      Errores
-                    </td>
-                    <td style={{ padding: '4px 8px' }}>
-                      {(importResult.issues && importResult.issues.length > 0
-                        ? importResult.issues
-                        : importResult.errors || []
-                      ).map((e, i) => (
-                        <div
-                          key={i}
-                          style={{
-                            color: 'var(--danger, #dc2626)',
-                            fontSize: '0.8125rem',
-                            marginBottom: 4,
-                          }}
-                        >
-                          <strong>Fila {e.row}</strong>
-                          {e.relatedRow ? ` (relacionada con fila ${e.relatedRow})` : ''}
-                          {e.columnLabel ? ` · ${e.columnLabel}` : ''}
-                          {e.value ? ` · "${e.value}"` : ''}
-                          {e.code ? ` · [${e.code}]` : ''}
-                          <br />
-                          {e.message}
-                        </div>
-                      ))}
-                    </td>
-                  </tr>
-                )}
+                    <tr>
+                      <td style={{ padding: '4px 8px', color: 'var(--danger, #dc2626)', verticalAlign: 'top' }}>
+                        Errores
+                      </td>
+                      <td style={{ padding: '4px 8px' }}>
+                        {(importResult.issues && importResult.issues.length > 0
+                          ? importResult.issues
+                          : importResult.errors || []
+                        ).map((e, i) => (
+                          <div
+                            key={i}
+                            style={{
+                              color: 'var(--danger, #dc2626)',
+                              fontSize: '0.8125rem',
+                              marginBottom: 4,
+                            }}
+                          >
+                            <strong>Fila {e.row}</strong>
+                            {e.relatedRow ? ` (relacionada con fila ${e.relatedRow})` : ''}
+                            {e.columnLabel ? ` · ${e.columnLabel}` : ''}
+                            {e.value ? ` · "${e.value}"` : ''}
+                            {e.code ? ` · [${e.code}]` : ''}
+                            <br />
+                            {e.message}
+                          </div>
+                        ))}
+                      </td>
+                    </tr>
+                  )}
                 {importResult.warnings && importResult.warnings.length > 0 && (
                   <tr>
                     <td style={{ padding: '4px 8px', color: '#d97706', verticalAlign: 'top' }}>Advertencias</td>
@@ -732,7 +732,7 @@ export default function Employees() {
               Selecciona un archivo Excel (.xlsx) con la información de empleados y beneficiarios para importar.
             </p>
             <div className="form-group">
-              <label>Archivo Excel</label>
+              <label>Archivo Excel (selecciona un archivo .xlsx)</label>
               <input
                 type="file"
                 accept=".xlsx"

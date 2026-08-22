@@ -379,7 +379,7 @@ export default function Campaigns() {
         }
       >
         <div className="form-group">
-          <label>Empresa</label>
+          <label>Empresa (selecciona la empresa responsable o crea una nueva)</label>
           <div style={{ display: 'flex', gap: 8 }}>
             <select
               value={form.companyId}
@@ -407,7 +407,7 @@ export default function Campaigns() {
           {errors.companyId && <p className="form-error">{errors.companyId}</p>}
         </div>
         <div className="form-group">
-          <label>Nombre de la Campaña</label>
+          <label>Nombre de la Campaña (ingresa un nombre descriptivo)</label>
           <input
             value={form.name}
             onChange={(e) => updateField('name', e.target.value)}
@@ -451,14 +451,14 @@ export default function Campaigns() {
           </div>
         )}
         <div className="form-group">
-          <label>Texto de Bienvenida</label>
+          <label>Texto de Bienvenida (mensaje que verá el usuario al momento de ingresar al seleccionar el regalo)</label>
           <textarea
             value={form.welcomeText}
             onChange={(e) => updateField('welcomeText', e.target.value)}
           />
         </div>
         <div className="form-group">
-          <label>Banner (imagen prediseñada)</label>
+          <label>Banner (carga una imagen PNG, JPEG o WebP de hasta 5 MB)</label>
           <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" onChange={handleBannerFileChange} />
           {(bannerPreviewUrl || (!bannerFile && editing?.bannerImageUrl)) && (
             <div style={{ marginTop: 8 }}>
@@ -472,7 +472,7 @@ export default function Campaigns() {
           )}
         </div>
         <div className="form-group">
-          <label>Editor de Banner</label>
+          <label>Editor de Banner (personaliza el banner con textos y elementos)</label>
           <BannerEditor
             bannerImageUrl={bannerPreviewUrl || editing?.bannerImageUrl || ''}
             decoration={bannerDecoration}
@@ -480,14 +480,14 @@ export default function Campaigns() {
           />
         </div>
         <div className="form-group">
-          <label>Texto de Reglas</label>
+          <label>Texto de Reglas (Maximo 5000 caracteres)</label>
           <textarea
             value={form.rulesText}
             onChange={(e) => updateField('rulesText', e.target.value)}
           />
         </div>
         <div className="form-group">
-          <label>Estado</label>
+          <label>Estado (define si la campaña está activa o cerrada)</label>
           <select
             value={form.status}
             onChange={(e) => updateField('status', e.target.value)}
@@ -497,14 +497,14 @@ export default function Campaigns() {
           </select>
         </div>
         <div className="form-group">
-          <label>Texto del Logo</label>
+          <label>Texto del Logo (texto alternativo para mostrar en el logo)</label>
           <input
             value={form.logoText}
             onChange={(e) => updateField('logoText', e.target.value)}
           />
         </div>
         <div className="form-group">
-          <label>Color Principal</label>
+          <label>Color Principal (elige el color principal de la campaña)</label>
           <input
             type="color"
             value={form.primaryColor}
@@ -512,7 +512,7 @@ export default function Campaigns() {
           />
         </div>
         <div className="form-group">
-          <label>Logo de la Empresa</label>
+          <label>Logo de la Empresa (carga una imagen PNG, JPEG o WebP de hasta 2 MB)</label>
           {form.logoImageUrl && !logoFile && (
             <div style={{ marginBottom: 8 }}>
               <img
@@ -566,7 +566,7 @@ export default function Campaigns() {
         }
       >
         <div className="form-group">
-          <label>Nombre de la Empresa</label>
+          <label>Nombre de la Empresa (ingresa un nombre descriptivo)</label>
           <input
             value={companyForm.name}
             onChange={(e) => setCompanyForm({ name: e.target.value })}

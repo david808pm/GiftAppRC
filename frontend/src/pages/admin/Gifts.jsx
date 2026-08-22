@@ -258,7 +258,7 @@ export default function Gifts() {
         } catch (uploadErr) {
           addToast(
             'Regalo guardado, pero no se pudo subir la imagen: ' +
-              (uploadErr.message || 'Error desconocido'),
+            (uploadErr.message || 'Error desconocido'),
             'warning',
           );
         } finally {
@@ -724,7 +724,7 @@ export default function Gifts() {
         }
       >
         <div className="form-group">
-          <label>Campaña</label>
+          <label>Campaña (selecciona la campaña correspondiente)</label>
           <select
             value={form.campaignId}
             onChange={(e) => updateField('campaignId', e.target.value)}
@@ -739,7 +739,7 @@ export default function Gifts() {
           {errors.campaignId && <p className="form-error">{errors.campaignId}</p>}
         </div>
         <div className="form-group">
-          <label>Nombre</label>
+          <label>Nombre (ingresa el nombre del regalo)</label>
           <input
             value={form.name}
             onChange={(e) => updateField('name', e.target.value)}
@@ -747,7 +747,7 @@ export default function Gifts() {
           {errors.name && <p className="form-error">{errors.name}</p>}
         </div>
         <div className="form-group">
-          <label>Referencia</label>
+          <label>Referencia (ingresa un código único)</label>
           <input
             value={form.reference}
             onChange={(e) => updateField('reference', e.target.value)}
@@ -756,21 +756,21 @@ export default function Gifts() {
           {errors.reference && <p className="form-error">{errors.reference}</p>}
         </div>
         <div className="form-group">
-          <label>Descripción Corta</label>
+          <label>Descripción Corta (resume el regalo brevemente)</label>
           <textarea
             value={form.shortDescription}
             onChange={(e) => updateField('shortDescription', e.target.value)}
           />
         </div>
         <div className="form-group">
-          <label>Descripción Técnica</label>
+          <label>Descripción Técnica (incluye sus características)</label>
           <textarea
             value={form.technicalDescription}
             onChange={(e) => updateField('technicalDescription', e.target.value)}
           />
         </div>
         <div className="form-group">
-          <label>Dimensiones</label>
+          <label>Dimensiones (indica alto, ancho y largo)</label>
           <input
             value={form.dimensions}
             onChange={(e) => updateField('dimensions', e.target.value)}
@@ -779,7 +779,7 @@ export default function Gifts() {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
           <div className="form-group">
-            <label>Stock</label>
+            <label>Stock (ingresa la cantidad disponible)</label>
             <input
               type="number"
               min="0"
@@ -789,7 +789,7 @@ export default function Gifts() {
             {errors.stock && <p className="form-error">{errors.stock}</p>}
           </div>
           <div className="form-group">
-            <label>Edad Mín</label>
+            <label>Edad Mín (edad mínima en años)</label>
             <input
               type="number"
               min="0"
@@ -799,7 +799,7 @@ export default function Gifts() {
             />
           </div>
           <div className="form-group">
-            <label>Edad Máx</label>
+            <label>Edad Máx (edad máxima en años)</label>
             <input
               type="number"
               min="0"
@@ -811,7 +811,7 @@ export default function Gifts() {
           </div>
         </div>
         <div className="form-group">
-          <label>Género Permitido</label>
+          <label>Género Permitido (selecciona quién puede recibirlo)</label>
           <select
             value={form.allowedGender}
             onChange={(e) => updateField('allowedGender', e.target.value)}
@@ -822,7 +822,7 @@ export default function Gifts() {
           </select>
         </div>
         <div className="form-group">
-          <label>Estado</label>
+          <label>Estado (define si el regalo está disponible)</label>
           <select
             value={form.status}
             onChange={(e) => updateField('status', e.target.value)}
@@ -835,7 +835,7 @@ export default function Gifts() {
         {editing ? (
           <div className="form-group">
             <label>
-              Imágenes del regalo ({editing.imageUrls?.length || 0} de 3)
+              Imágenes del regalo ({editing.imageUrls?.length || 0} de 3) (máximo 3 imágenes)
             </label>
 
             {/* Current images grid */}
@@ -912,7 +912,7 @@ export default function Gifts() {
             {editing.imageUrls?.length < 3 && (
               <div style={{ marginTop: 12 }}>
                 <label style={{ fontSize: '0.875rem', color: 'var(--gray-600)', marginBottom: 4, display: 'block' }}>
-                  Agregar {3 - editing.imageUrls.length} imagen(es) más
+                  Agregar {3 - editing.imageUrls.length} imagen(es) más (JPG, PNG o WebP)
                 </label>
                 <input
                   type="file"
@@ -976,7 +976,7 @@ export default function Gifts() {
           <>
             {/* ── Create mode: simple file upload ── */}
             <div className="form-group">
-              <label>Subir Imagen desde Computador (máx 3)</label>
+              <label>Subir Imagen desde Computador (máximo 3, JPG, PNG o WebP)</label>
               <input
                 type="file"
                 multiple
@@ -1039,7 +1039,7 @@ export default function Gifts() {
         {/* External URLs textarea — informational in edit, editable in create */}
         {!editing && (
           <div className="form-group">
-            <label>O URLs de Imágenes Externas (separadas por coma)</label>
+            <label>O URLs de Imágenes Externas (separadas por coma, una URL por imagen)</label>
             <textarea
               value={form.imageUrls}
               onChange={(e) => updateField('imageUrls', e.target.value)}

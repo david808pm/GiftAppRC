@@ -118,50 +118,50 @@ export default function BannerEditor({ decoration: initialDecoration, bannerImag
                 {selectedLayer && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         <div>
-                            <label style={{ fontSize: 12, color: '#666' }}>Tipo</label>
+                            <label style={{ fontSize: 12, color: '#666' }}>Tipo (selecciona el elemento)</label>
                             <div>{selectedLayer.type}</div>
                         </div>
 
                         {selectedLayer.type === 'text' && (
                             <>
-                                <label>Texto</label>
+                                <label>Texto (ingresa el texto a mostrar)</label>
                                 <input value={selectedLayer.text} onChange={(e) => updateLayer(selected, { text: e.target.value })} />
-                                <label>Color</label>
+                                <label>Color (elige un color)</label>
                                 <input value={selectedLayer.color} onChange={(e) => updateLayer(selected, { color: e.target.value })} />
-                                <label>Tamaño</label>
+                                <label>Tamaño (indica el tamaño del texto)</label>
                                 <input type="number" value={selectedLayer.fontSize} onChange={(e) => updateLayer(selected, { fontSize: Number(e.target.value) })} />
-                                <label>Posición</label>
+                                <label>Posición (selecciona la alineación)</label>
                                 <select value={selectedLayer.position || 'center'} onChange={(e) => updateLayer(selected, { position: e.target.value })}>
                                     <option value="center">Centro</option>
                                     <option value="top-left">Arriba izquierda</option>
                                     <option value="top-right">Arriba derecha</option>
                                     <option value="bottom-right">Abajo derecha</option>
                                 </select>
-                                <label>X</label>
+                                <label>X (posición horizontal)</label>
                                 <input type="number" value={selectedLayer.x || 0} onChange={(e) => updateLayer(selected, { x: Number(e.target.value) })} />
-                                <label>Y</label>
+                                <label>Y (posición vertical)</label>
                                 <input type="number" value={selectedLayer.y || 0} onChange={(e) => updateLayer(selected, { y: Number(e.target.value) })} />
                             </>
                         )}
 
                         {selectedLayer.type === 'overlay' && (
                             <>
-                                <label>URL imagen</label>
+                                <label>URL imagen (pega una URL válida)</label>
                                 <input value={selectedLayer.imageUrl || ''} onChange={(e) => updateLayer(selected, { imageUrl: e.target.value })} placeholder="https://..." />
-                                <label>Ancho (px o %)</label>
+                                <label>Ancho (px o %) (indica el ancho)</label>
                                 <input value={selectedLayer.width || ''} onChange={(e) => updateLayer(selected, { width: e.target.value })} placeholder="50%" />
-                                <label>Opacidad (0-1)</label>
+                                <label>Opacidad (0-1) (usa un valor entre 0 y 1)</label>
                                 <input type="number" step="0.1" min="0" max="1" value={selectedLayer.opacity ?? 1} onChange={(e) => updateLayer(selected, { opacity: Number(e.target.value) })} />
-                                <label>Posición</label>
+                                <label>Posición (selecciona la alineación)</label>
                                 <select value={selectedLayer.position || 'center'} onChange={(e) => updateLayer(selected, { position: e.target.value })}>
                                     <option value="center">Centro</option>
                                     <option value="top-left">Arriba izquierda</option>
                                     <option value="top-right">Arriba derecha</option>
                                     <option value="bottom-right">Abajo derecha</option>
                                 </select>
-                                <label>X</label>
+                                <label>X (posición horizontal)</label>
                                 <input type="number" value={selectedLayer.x || 0} onChange={(e) => updateLayer(selected, { x: Number(e.target.value) })} />
-                                <label>Y</label>
+                                <label>Y (posición vertical)</label>
                                 <input type="number" value={selectedLayer.y || 0} onChange={(e) => updateLayer(selected, { y: Number(e.target.value) })} />
                             </>
                         )}

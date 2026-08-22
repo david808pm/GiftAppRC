@@ -356,7 +356,7 @@ export default function BeneficiariesAdmin() {
         }
       >
         <div className="form-group">
-          <label>Empleado</label>
+          <label>Empleado (selecciona el empleado responsable)</label>
           <select
             value={form.employeeId}
             onChange={(e) => updateField('employeeId', e.target.value)}
@@ -371,7 +371,7 @@ export default function BeneficiariesAdmin() {
           {errors.employeeId && <p className="form-error">{errors.employeeId}</p>}
         </div>
         <div className="form-group">
-          <label>Nombre Completo</label>
+          <label>Nombre Completo (ingresa el nombre del beneficiario)</label>
           <input
             value={form.fullName}
             onChange={(e) => updateField('fullName', e.target.value)}
@@ -379,7 +379,7 @@ export default function BeneficiariesAdmin() {
           {errors.fullName && <p className="form-error">{errors.fullName}</p>}
         </div>
         <div className="form-group">
-          <label>Edad (0-13)</label>
+          <label>Edad (0-13) (ingresa la edad en años)</label>
           <input
             type="number"
             min="0"
@@ -390,7 +390,7 @@ export default function BeneficiariesAdmin() {
           {errors.age && <p className="form-error">{errors.age}</p>}
         </div>
         <div className="form-group">
-          <label>Género</label>
+          <label>Género (selecciona una opción)</label>
           <select
             value={form.gender}
             onChange={(e) => updateField('gender', e.target.value)}
