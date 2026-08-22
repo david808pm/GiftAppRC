@@ -433,14 +433,14 @@ export default function BeneficiarySelection() {
                   >
                     Seleccionado: {selections[currentBeneficiary.id].name}
                   </span>
-                    <button
-                      className="btn btn-outline btn-sm"
-                      onClick={() =>
-                        handleDeselectGift(currentBeneficiary.id)
-                      }
-                    >
-                      Cambiar
-                    </button>
+                  <button
+                    className="btn btn-outline btn-sm"
+                    onClick={() =>
+                      handleDeselectGift(currentBeneficiary.id)
+                    }
+                  >
+                    Cambiar
+                  </button>
                 </div>
               )}
             </div>
@@ -461,12 +461,14 @@ export default function BeneficiarySelection() {
                       className={`gift-card ${isSelected ? 'selected' : ''}`}
                     >
                       <img
-                        className="gift-card-image"
+                        className="gift-card-image zoomable-image"
                         src={
                           gift.imageUrls?.[0] ||
                           'https://placehold.co/400x400/CCCCCC/666?text=No+Image'
                         }
                         alt={gift.name}
+                        title="Haz clic para ampliar la imagen"
+                        onClick={() => setDetailGift(gift)}
                         onError={(e) => {
                           e.target.src =
                             'https://placehold.co/400x400/CCCCCC/666?text=No+Image';
@@ -524,33 +526,33 @@ export default function BeneficiarySelection() {
             flexWrap: 'wrap',
             gap: 8,
           }}
+        >
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={() => setShowSupport(!showSupport)}
           >
+            Reportar Problema
+          </button>
+          <div className="public-action-bar__buttons" style={{ display: 'flex', gap: 8 }}>
             <button
-              className="btn btn-outline btn-sm"
-              onClick={() => setShowSupport(!showSupport)}
+              className="btn btn-outline"
+              onClick={() => { setSelectionError(''); setActiveTab(Math.max(0, activeTab - 1)); }}
+              disabled={activeTab === 0}
             >
-              Reportar Problema
+              Anterior
             </button>
-            <div className="public-action-bar__buttons" style={{ display: 'flex', gap: 8 }}>
+            {activeTab < beneficiaries.length - 1 ? (
               <button
-                className="btn btn-outline"
-                onClick={() => { setSelectionError(''); setActiveTab(Math.max(0, activeTab - 1)); }}
-                disabled={activeTab === 0}
+                className="btn btn-primary"
+                onClick={() => { setSelectionError(''); setActiveTab(activeTab + 1); }}
               >
-                Anterior
+                Siguiente Beneficiario
               </button>
-              {activeTab < beneficiaries.length - 1 ? (
-                <button
-                  className="btn btn-primary"
-                  onClick={() => { setSelectionError(''); setActiveTab(activeTab + 1); }}
-                >
-                  Siguiente Beneficiario
-                </button>
-              ) : (
-                <button className="btn btn-success" onClick={handleGoToSummary}>
-                  Revisar Selección
-                </button>
-              )}
+            ) : (
+              <button className="btn btn-success" onClick={handleGoToSummary}>
+                Revisar Selección
+              </button>
+            )}
           </div>
         </div>
 
@@ -626,8 +628,8 @@ export default function BeneficiarySelection() {
                     {supportSubmitting ? 'Enviando...' : 'Enviar Reporte'}
                   </button>
                 </form>
-                </>
-              )}
+              </>
+            )}
           </div>
         )}
       </div>

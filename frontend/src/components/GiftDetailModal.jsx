@@ -3,6 +3,7 @@ import Modal from './Modal';
 
 export default function GiftDetailModal({ gift, isOpen, onClose, onSelect }) {
   const [activeImage, setActiveImage] = useState(0);
+  const [zoomed, setZoomed] = useState(false);
 
   if (!gift) return null;
 
@@ -10,6 +11,8 @@ export default function GiftDetailModal({ gift, isOpen, onClose, onSelect }) {
     gift.imageUrls && gift.imageUrls.length > 0
       ? gift.imageUrls
       : ['https://placehold.co/400x400/CCCCCC/666?text=No+Image'];
+
+  const activeImageUrl = images[activeImage] || images[0];
 
   return (
     <Modal
@@ -24,7 +27,11 @@ export default function GiftDetailModal({ gift, isOpen, onClose, onSelect }) {
             key={i}
             src={url}
             alt={`${gift.name} ${i + 1}`}
-            onClick={() => setActiveImage(i)}
+            onClick={() => {
+              setActiveImage(i);
+              setZoomed(false);
+            }}
+            className={i === activeImage ? 'is-active' : ''}
             style={{
               border:
                 i === activeImage
@@ -38,6 +45,35 @@ export default function GiftDetailModal({ gift, isOpen, onClose, onSelect }) {
             }}
           />
         ))}
+      </div>
+
+      <div className="gift-detail-preview-wrap">
+        <img
+          src={activeImageUrl}
+          alt={`${gift.name} principal`}
+          className="gift-detail-preview"
+          onClick={() => setZoomed(true)}
+          title="Click para ampliar"
+          onError={(e) => {
+            e.target.src =
+              'https://placehold.co/400x400/CCCCCC/666?text=No+Image';
+          }}
+        />
+      </div>
+
+      <div
+        className={`gift-image-lightbox ${zoomed ? 'is-open' : ''}`}
+        onClick={() => setZoomed(false)}
+        aria-hidden={!zoomed}
+      >
+        <img
+          src={activeImageUrl}
+          alt={`${gift.name} ampliado`}
+          onError={(e) => {
+            e.target.src =
+              'https://placehold.co/400x400/CCCCCC/666?text=No+Image';
+          }}
+        />
       </div>
 
       <div style={{ marginBottom: 12 }}>

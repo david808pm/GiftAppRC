@@ -249,7 +249,7 @@ export default function SupportRequests() {
               <p>{selected.documentId}</p>
             </div>
             <div className="form-group">
-              <label>Estado</label>
+              <label>Estado (selecciona el estado de la solicitud)</label>
               {isReadOnly ? (
                 <p>{statusForm === 'OPEN' ? 'Abierto' : statusForm === 'IN_REVIEW' ? 'En Revisión' : 'Resuelto'}</p>
               ) : (
@@ -264,7 +264,7 @@ export default function SupportRequests() {
               )}
             </div>
             <div className="form-group">
-              <label>Nota Interna</label>
+              <label>Nota Interna (agrega observaciones para el equipo)</label>
               {isReadOnly ? (
                 <p style={{ whiteSpace: 'pre-wrap' }}>{noteForm || 'Sin notas'}</p>
               ) : (

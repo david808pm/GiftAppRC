@@ -343,7 +343,7 @@ export default function AdminUsers() {
         }
       >
         <div className="form-group">
-          <label>Nombre</label>
+          <label>Nombre (ingresa el nombre completo)</label>
           <input
             value={form.name}
             onChange={(e) => updateField('name', e.target.value)}
@@ -351,7 +351,7 @@ export default function AdminUsers() {
           {errors.name && <p className="form-error">{errors.name}</p>}
         </div>
         <div className="form-group">
-          <label>Email</label>
+          <label>Email (ingresa un correo válido)</label>
           <input
             type="email"
             value={form.email}
@@ -361,7 +361,7 @@ export default function AdminUsers() {
         </div>
         {!editing && (
           <div className="form-group">
-            <label>Contraseña</label>
+            <label>Contraseña (mínimo 8 caracteres)</label>
             <input
               type="password"
               value={form.password}
@@ -371,7 +371,7 @@ export default function AdminUsers() {
           </div>
         )}
         <div className="form-group">
-          <label>Rol</label>
+          <label>Rol (define el nivel de acceso)</label>
           <select
             value={form.role}
             onChange={(e) => updateField('role', e.target.value)}
@@ -381,7 +381,7 @@ export default function AdminUsers() {
           </select>
         </div>
         <div className="form-group">
-          <label>Compañía</label>
+          <label>Compañía (selecciona la compañía asociada)</label>
           <select
             value={form.companyId}
             onChange={(e) => updateField('companyId', e.target.value)}
@@ -404,7 +404,7 @@ export default function AdminUsers() {
                 onChange={(e) => updateField('isActive', e.target.checked)}
                 style={{ marginRight: 8 }}
               />
-              Usuario activo
+              Usuario activo (marca para permitir el acceso)
             </label>
           </div>
         )}
@@ -426,7 +426,7 @@ export default function AdminUsers() {
         }
       >
         <div className="form-group">
-          <label>Nueva Contraseña</label>
+          <label>Nueva Contraseña (mínimo 8 caracteres)</label>
           <input
             type="password"
             value={passwordForm.password}
@@ -435,7 +435,7 @@ export default function AdminUsers() {
           {passwordErrors.password && <p className="form-error">{passwordErrors.password}</p>}
         </div>
         <div className="form-group">
-          <label>Confirmar Contraseña</label>
+          <label>Confirmar Contraseña (repite la nueva contraseña)</label>
           <input
             type="password"
             value={passwordForm.confirmPassword}
