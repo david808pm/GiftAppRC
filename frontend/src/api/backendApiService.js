@@ -130,6 +130,7 @@ export function mapGiftFromApi(gift) {
     stock: Number(gift.stock),
     minAge: Number(gift.minAge),
     maxAge: Number(gift.maxAge),
+    timesSelected: gift.timesSelected ?? 0,
   };
 }
 
@@ -236,6 +237,26 @@ export async function importEmployeesBeneficiaries(file) {
   const formData = new FormData();
   formData.append('file', file);
   return apiClient.upload('/admin/import/employees-beneficiaries', formData);
+}
+
+// ── Gift import (Excel + ZIP) ─────────────────────────────
+
+export async function validateGiftImportPackage(excelFile, zipFile) {
+  const formData = new FormData();
+  formData.append('excel', excelFile);
+  formData.append('zip', zipFile);
+  return apiClient.upload('/admin/gift-import/validate', formData);
+}
+
+export async function commitGiftImportPackage(excelFile, zipFile) {
+  const formData = new FormData();
+  formData.append('excel', excelFile);
+  formData.append('zip', zipFile);
+  return apiClient.upload('/admin/gift-import/commit', formData);
+}
+
+export async function downloadGiftImportTemplate() {
+  return apiClient.downloadBlob('/admin/gift-import/template');
 }
 
 // ── Admin Users ────────────────────────────────────────────

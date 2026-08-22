@@ -16,6 +16,9 @@ import {
   giftAppDeleteAllGiftImages,
   giftAppSetPrimaryGiftImage,
   giftAppReplaceGiftImage,
+  giftAppValidateGiftImport,
+  giftAppCommitGiftImport,
+  giftAppDownloadGiftImportTemplate,
   USE_BACKEND,
 } from '../../api/giftAppService';
 import Modal from '../../components/Modal';
@@ -41,6 +44,8 @@ const EMPTY_GIFT = {
 
 const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_IMAGE_SIZE = 2 * 1024 * 1024; // 2MB
+const IMPORT_EXCEL_MAX = 5 * 1024 * 1024; // 5 MB (must match backend LIMITS)
+const IMPORT_ZIP_MAX = 50 * 1024 * 1024; // 50 MB
 
 export default function Gifts() {
   const { isReadOnly } = useOutletContext() || {};
@@ -68,8 +73,17 @@ export default function Gifts() {
   const [imageActionLoading, setImageActionLoading] = useState(false);
   const replaceFileInputRef = useRef(null);
 
-  const loadData = async () => {
-    if (USE_BACKEND) {
+  // ── Gift import (Excel + ZIP) state ─────────────────────
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importExcel, setImportExcel] = useState(null);
+  const [importZip, setImportZip] = useState(null);
+  const [importPhase, setImportPhase] = useState('upload'); // upload | review | result
+  const [importResult, setImportResult] = useState(null);
+  const [importError, setImportError] = useState('');
+  const [importing, setImporting] = useState(false);
+
+  const loadData = async ({ silent = false } = {}) => {
+    if (USE_BACKEND && !silent) {
       setLoading(true);
       setError(null);
     }
@@ -80,12 +94,14 @@ export default function Gifts() {
       ]);
       setGifts(giftsData);
       setCampaigns(campaignsData);
+      return true;
     } catch {
-      if (USE_BACKEND) {
+      if (USE_BACKEND && !silent) {
         setError('No fue posible cargar los regalos.');
       }
+      return false;
     } finally {
-      if (USE_BACKEND) {
+      if (USE_BACKEND && !silent) {
         setLoading(false);
       }
     }
@@ -94,6 +110,62 @@ export default function Gifts() {
   useEffect(() => {
     loadData();
   }, []);
+
+  // ── Controlled refresh (Veces escogido / data refresh) ──
+  const [refreshing, setRefreshing] = useState(false);
+  const lastAutoRefreshRef = useRef(0);
+  const AUTO_REFRESH_MIN_INTERVAL_MS = 10000;
+
+  const refreshGifts = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    clearCache('gifts_all');
+    const ok = await loadData({ silent: true });
+    if (!ok) {
+      addToast('No fue posible actualizar los regalos.', 'error');
+    }
+    setRefreshing(false);
+  };
+
+  useEffect(() => {
+    const tryAutoRefresh = () => {
+      if (
+        !USE_BACKEND ||
+        showModal ||
+        showImportModal ||
+        saving ||
+        deleting ||
+        uploading ||
+        imageActionLoading ||
+        importing
+      ) {
+        return;
+      }
+      const now = Date.now();
+      if (now - lastAutoRefreshRef.current < AUTO_REFRESH_MIN_INTERVAL_MS) return;
+      lastAutoRefreshRef.current = now;
+      clearCache('gifts_all');
+      loadData({ silent: true });
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') tryAutoRefresh();
+    };
+    const onFocus = () => tryAutoRefresh();
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [
+    showModal,
+    showImportModal,
+    saving,
+    deleting,
+    uploading,
+    imageActionLoading,
+    importing,
+  ]);
 
   const filtered = gifts.filter((g) => {
     const matchesSearch =
@@ -355,7 +427,6 @@ export default function Gifts() {
       setReplacingImageId(null);
       return;
     }
-
     if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
       addToast('Tipo de archivo no permitido. Use: JPEG, PNG o WebP.', 'error');
       setReplacingImageId(null);
@@ -380,6 +451,108 @@ export default function Gifts() {
       addToast(err.message || 'Error al reemplazar la imagen.', 'error');
     } finally {
       setImageActionLoading(false);
+    }
+  };
+
+  // ── Gift import handlers ────────────────────────────────
+  const openImportModal = () => {
+    setShowImportModal(true);
+    setImportPhase('upload');
+    setImportExcel(null);
+    setImportZip(null);
+    setImportResult(null);
+    setImportError('');
+  };
+
+  const handleImportExcelChange = (e) => {
+    const f = e.target.files?.[0] || null;
+    setImportError('');
+    if (f) {
+      if (!f.name.toLowerCase().endsWith('.xlsx')) {
+        setImportError('El archivo Excel debe ser .xlsx.');
+        e.target.value = '';
+        return;
+      }
+      if (f.size > IMPORT_EXCEL_MAX) {
+        setImportError('El archivo Excel supera el máximo de 5 MB.');
+        e.target.value = '';
+        return;
+      }
+    }
+    setImportExcel(f);
+  };
+
+  const handleImportZipChange = (e) => {
+    const f = e.target.files?.[0] || null;
+    setImportError('');
+    if (f) {
+      if (!f.name.toLowerCase().endsWith('.zip')) {
+        setImportError('El archivo ZIP debe ser .zip.');
+        e.target.value = '';
+        return;
+      }
+      if (f.size > IMPORT_ZIP_MAX) {
+        setImportError('El archivo ZIP supera el máximo de 50 MB.');
+        e.target.value = '';
+        return;
+      }
+    }
+    setImportZip(f);
+  };
+
+  const handleValidateImport = async () => {
+    if (!importExcel || !importZip) return;
+    setImporting(true);
+    setImportError('');
+    try {
+      const res = await giftAppValidateGiftImport(importExcel, importZip);
+      setImportResult(res);
+      setImportPhase('review');
+    } catch (err) {
+      setImportError(err.message || 'Error al validar el paquete.');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleCommitImport = async () => {
+    if (!importExcel || !importZip) return;
+    setImporting(true);
+    setImportError('');
+    try {
+      const res = await giftAppCommitGiftImport(importExcel, importZip);
+      setImportResult(res);
+      if (res.canImport === true) {
+        clearCache('gifts_all');
+        await loadData();
+        setImportPhase('result');
+      } else {
+        setImportPhase('review');
+      }
+    } catch (err) {
+      setImportError(
+        (err.message || 'Error al importar.') +
+          ' Ningún cambio quedó guardado.',
+      );
+      setImportPhase('review');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const blob = await giftAppDownloadGiftImportTemplate();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'plantilla_regalos.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      addToast(err.message || 'No se pudo descargar la plantilla.', 'error');
     }
   };
 
@@ -413,11 +586,27 @@ export default function Gifts() {
     <div>
       <div className="admin-topbar">
         <h1>Regalos</h1>
-        {!isReadOnly && (
-          <button className="btn btn-primary btn-sm" onClick={openCreate}>
-            + Nuevo Regalo
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={refreshGifts}
+            disabled={refreshing || loading}
+          >
+            {refreshing ? 'Refrescando...' : 'Refrescar'}
           </button>
-        )}
+          {!isReadOnly && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              {USE_BACKEND && (
+                <button className="btn btn-outline btn-sm" onClick={openImportModal}>
+                  Importar regalos
+                </button>
+              )}
+              <button className="btn btn-primary btn-sm" onClick={openCreate}>
+                Crear regalo
+              </button>
+            </div>
+          )}
+        </div>
       </div>
       <div className="admin-body">
         <div className="search-bar">
@@ -452,6 +641,7 @@ export default function Gifts() {
                   <th>Referencia</th>
                   <th>Campaña</th>
                   <th>Stock</th>
+                  <th>Veces escogido</th>
                   <th>Edad</th>
                   <th>Género</th>
                   <th>Estado</th>
@@ -484,6 +674,7 @@ export default function Gifts() {
                     <td><code>{g.reference}</code></td>
                     <td>{getCampaignName(g.campaignId)}</td>
                     <td>{g.stock}</td>
+                    <td>{g.timesSelected ?? 0}</td>
                     <td>{g.minAge}-{g.maxAge}</td>
                     <td style={{ textTransform: 'capitalize' }}>{g.allowedGender === 'all' ? 'Todos' : g.allowedGender === 'male' ? 'Masculino' : 'Femenino'}</td>
                     <td>
@@ -899,6 +1090,314 @@ export default function Gifts() {
         onConfirm={handleDeleteAllImages}
         onCancel={() => setImageDeleteAllConfirm(false)}
       />
+
+      {/* ── Importación masiva de regalos (Excel + ZIP) ── */}
+      <Modal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        title="Importar regalos"
+        footer={
+          importPhase === 'result' ? (
+            <button className="btn btn-primary" onClick={() => setShowImportModal(false)}>
+              Cerrar
+            </button>
+          ) : importPhase === 'review' ? (
+            <>
+              <button
+                className="btn btn-outline"
+                onClick={() => setShowImportModal(false)}
+                disabled={importing}
+              >
+                Cancelar
+              </button>
+              <button
+                className="btn btn-outline"
+                onClick={() => {
+                  setImportPhase('upload');
+                  setImportResult(null);
+                }}
+                disabled={importing}
+              >
+                Volver
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleCommitImport}
+                disabled={!importResult || importResult.canImport !== true || importing}
+              >
+                {importing ? 'Importando...' : 'Confirmar importación'}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className="btn btn-outline"
+                onClick={() => setShowImportModal(false)}
+                disabled={importing}
+              >
+                Cancelar
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleValidateImport}
+                disabled={!importExcel || !importZip || importing}
+              >
+                {importing ? 'Validando...' : 'Validar paquete'}
+              </button>
+            </>
+          )
+        }
+      >
+        {importPhase === 'result' ? (
+          <div>
+            <p style={{ marginBottom: 12, fontWeight: 500, color: 'var(--success, #16a34a)' }}>
+              Importación completada exitosamente
+            </p>
+            {importResult && (
+              <table style={{ width: '100%', fontSize: '0.875rem' }}>
+                <tbody>
+                  <tr>
+                    <td style={{ padding: '4px 8px', color: 'var(--gray-500)' }}>
+                      Total de filas procesadas
+                    </td>
+                    <td style={{ padding: '4px 8px', fontWeight: 600 }}>
+                      {importResult.totalRows}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: '4px 8px', color: 'var(--gray-500)' }}>
+                      Regalos creados
+                    </td>
+                    <td style={{ padding: '4px 8px', fontWeight: 600, color: 'var(--success, #16a34a)' }}>
+                      {importResult.giftsCreated}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: '4px 8px', color: 'var(--gray-500)' }}>
+                      Imágenes subidas
+                    </td>
+                    <td style={{ padding: '4px 8px', fontWeight: 600, color: 'var(--success, #16a34a)' }}>
+                      {importResult.imagesUploaded}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: '4px 8px', color: 'var(--gray-500)' }}>
+                      Advertencias
+                    </td>
+                    <td style={{ padding: '4px 8px', fontWeight: 600 }}>
+                      {importResult.warningCount}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: '4px 8px', color: 'var(--gray-500)' }}>
+                      Errores bloqueantes
+                    </td>
+                    <td style={{ padding: '4px 8px', fontWeight: 600 }}>
+                      {importResult.errorCount}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            )}
+            {importResult?.warnings?.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                {(importResult.warnings || []).map((w, i) => (
+                  <div
+                    key={i}
+                    style={{ color: '#d97706', fontSize: '0.8125rem', marginBottom: 4 }}
+                  >
+                    Fila {w.row}: {w.message}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : importPhase === 'review' ? (
+          <div>
+            {importError && (
+              <p
+                style={{
+                  marginBottom: 12,
+                  color: 'var(--danger, #dc2626)',
+                  fontSize: '0.875rem',
+                  padding: '8px 12px',
+                  background: '#fef2f2',
+                  borderRadius: 4,
+                }}
+              >
+                {importError}
+              </p>
+            )}
+            {importResult &&
+              (importResult.canImport === false ? (
+                <>
+                  <p style={{ marginBottom: 8, fontWeight: 600, color: 'var(--danger, #dc2626)' }}>
+                    Importación bloqueada
+                  </p>
+                  <p
+                    style={{
+                      color: 'var(--danger, #dc2626)',
+                      fontSize: '0.875rem',
+                      marginBottom: 12,
+                      padding: '8px 12px',
+                      background: '#fef2f2',
+                      borderRadius: 4,
+                    }}
+                  >
+                    Se encontraron {importResult.errorCount} error(es) bloqueantes. No se
+                    importará ningún regalo. Corrige el Excel o el ZIP y vuelve a validar.
+                  </p>
+                </>
+              ) : (
+                <p
+                  style={{
+                    marginBottom: 12,
+                    padding: '8px 12px',
+                    borderRadius: 4,
+                    fontWeight: 500,
+                    color: 'var(--success, #16a34a)',
+                    background: '#f0fdf4',
+                  }}
+                >
+                  El paquete es válido. Revisa el resumen y confirma la importación.
+                </p>
+              ))}
+            {importResult?.issues?.filter((i) => i.severity === 'ERROR').length >
+              0 && (
+              <div style={{ maxHeight: 160, overflowY: 'auto', marginBottom: 12 }}>
+                {importResult.issues
+                  .filter((i) => i.severity === 'ERROR')
+                  .map((e, i) => (
+                    <div
+                      key={`e${i}`}
+                      style={{
+                        color: 'var(--danger, #dc2626)',
+                        fontSize: '0.8125rem',
+                        marginBottom: 4,
+                      }}
+                    >
+                      <strong>Fila {e.row}</strong>
+                      {e.relatedRow ? ` (relacionada con fila ${e.relatedRow})` : ''}
+                      {e.columnLabel ? ` · ${e.columnLabel}` : ''}
+                      {e.value ? ` · "${e.value}"` : ''}
+                      {e.code ? ` · [${e.code}]` : ''}
+                      <br />
+                      {e.message}
+                    </div>
+                  ))}
+              </div>
+            )}
+            <p
+              style={{
+                margin: '4px 0 8px',
+                fontSize: '0.8125rem',
+                color: 'var(--gray-600)',
+              }}
+            >
+              Asociación de carpetas de imágenes por regalo:
+            </p>
+            <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: 12 }}>
+              <table style={{ width: '100%', fontSize: '0.8125rem' }}>
+                <thead>
+                  <tr style={{ textAlign: 'left' }}>
+                    <th style={{ padding: '4px 6px' }}>Fila</th>
+                    <th style={{ padding: '4px 6px' }}>Regalo</th>
+                    <th style={{ padding: '4px 6px' }}>Carpeta</th>
+                    <th style={{ padding: '4px 6px' }}>Imágenes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(importResult?.folderPreviews || []).map((p, i) => (
+                    <tr key={i}>
+                      <td style={{ padding: '4px 6px' }}>{p.row}</td>
+                      <td style={{ padding: '4px 6px' }}>
+                        {p.name} <span style={{ color: 'var(--gray-400)' }}>({p.reference})</span>
+                      </td>
+                      <td style={{ padding: '4px 6px' }}>
+                        {p.matched ? (
+                          <span style={{ color: 'var(--success, #16a34a)' }}>{p.imageFolder}</span>
+                        ) : (
+                          <span style={{ color: 'var(--danger, #dc2626)' }}>{p.imageFolder} (no encontrada)</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '4px 6px' }}>
+                        {(p.files || [])
+                          .map((f) => `${f.name}${f.mime ? '' : ' (inválida)'}`)
+                          .join(', ') || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {importResult?.issues?.filter((i) => i.severity === 'WARNING').length >
+              0 && (
+              <div>
+                {importResult.issues
+                  .filter((i) => i.severity === 'WARNING')
+                  .map((w, i) => (
+                    <div
+                      key={`w${i}`}
+                      style={{ color: '#d97706', fontSize: '0.8125rem', marginBottom: 2 }}
+                    >
+                      {w.row ? `Fila ${w.row}: ` : ''}
+                      {w.message}
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            <p style={{ marginBottom: 12, color: 'var(--gray-600)', fontSize: '0.9375rem' }}>
+              Sube un Excel (.xlsx) con la información de los regalos y un ZIP (.zip)
+              con las carpetas de imágenes. El backend valida todo el paquete antes de
+              importar.
+            </p>
+            <div className="form-group">
+              <label>Archivo Excel (.xlsx, máx 5 MB)</label>
+              <input
+                type="file"
+                accept=".xlsx"
+                onChange={handleImportExcelChange}
+                disabled={importing}
+              />
+            </div>
+            <div className="form-group">
+              <label>Archivo ZIP (.zip, máx 50 MB)</label>
+              <input
+                type="file"
+                accept=".zip"
+                onChange={handleImportZipChange}
+                disabled={importing}
+              />
+            </div>
+            {importExcel && (
+              <p style={{ fontSize: '0.8125rem', color: 'var(--gray-500)', margin: '2px 0' }}>
+                Excel: {importExcel.name} ({(importExcel.size / 1024).toFixed(1)} KB)
+              </p>
+            )}
+            {importZip && (
+              <p style={{ fontSize: '0.8125rem', color: 'var(--gray-500)', margin: '2px 0' }}>
+                ZIP: {importZip.name} ({(importZip.size / 1024 / 1024).toFixed(2)} MB)
+              </p>
+            )}
+            {importError && (
+              <p className="form-error" style={{ marginTop: 8 }}>
+                {importError}
+              </p>
+            )}
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={handleDownloadTemplate}
+              style={{ marginTop: 12 }}
+            >
+              Descargar plantilla Excel
+            </button>
+          </div>
+        )}
+      </Modal>
 
       <Toast toasts={toasts} onRemove={removeToast} />
     </div>

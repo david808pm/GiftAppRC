@@ -158,6 +158,29 @@ export class PerformanceTimingInterceptor implements NestInterceptor {
       }
     }
 
+    if (
+      operation === 'admin.gift-import.validate' ||
+      operation === 'admin.gift-import.commit'
+    ) {
+      if (responseBody) {
+        const ALLOWED =
+          operation === 'admin.gift-import.validate'
+            ? ['totalRows', 'errorCount', 'warningCount']
+            : [
+                'totalRows',
+                'giftsCreated',
+                'imagesUploaded',
+                'warningCount',
+                'errorCount',
+              ];
+        for (const key of ALLOWED) {
+          if (typeof responseBody[key] === 'number') {
+            meta[key] = responseBody[key];
+          }
+        }
+      }
+    }
+
     if (operation === 'admin.export.selections' || operation === 'admin.export.employees') {
       if (Buffer.isBuffer(responseBody)) {
         meta.fileSizeBytes = responseBody.length;
